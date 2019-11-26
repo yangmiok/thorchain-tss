@@ -24,6 +24,7 @@ import (
 	maddr "github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	cryptokey "github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 	"gitlab.com/thorchain/bepswap/thornode/cmd"
 )
@@ -184,46 +185,53 @@ func (t *Tss) getThorPubKey(input *big.Int) (string, types.AccAddress, error) {
 	return pubKey, addr, err
 }
 
-func (t *Tss) getPubKey(keygenReq KeyGenReq) (string, error) {
-	priHexBytes, err := base64.StdEncoding.DecodeString(keygenReq.PrivKey)
+func (t *Tss) getPriKey(priKeyString string) (cryptokey.PrivKey, error) {
+	priHexBytes, err := base64.StdEncoding.DecodeString(priKeyString)
 	if nil != err {
-		return "", fmt.Errorf("fail to decode private key: %w", err)
+		return nil, fmt.Errorf("fail to decode private key: %w", err)
 	}
 	rawBytes, err := hex.DecodeString(string(priHexBytes))
 	if nil != err {
-		return "", fmt.Errorf("fail to hex decode private key: %w", err)
+		return nil, fmt.Errorf("fail to hex decode private key: %w", err)
 	}
 	var keyBytesArray [32]byte
 	copy(keyBytesArray[:], rawBytes[:32])
 	priKey := secp256k1.PrivKeySecp256k1(keyBytesArray)
-	pubKey, err := sdk.Bech32ifyAccPub(priKey.PubKey())
 	if nil != err {
-		return "", fmt.Errorf("fail to get account public key: %w", err)
+		return nil, fmt.Errorf("fail to get account public key: %w", err)
 	}
-	return pubKey, nil
+	return priKey, nil
 }
-func (t *Tss) generateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, error) {
-	// When using the keygen party it is recommended that you pre-compute the "safe primes" and Paillier secret beforehand because this can take some time.
-	// This code will generate those parameters using a concurrency limit equal to the number of available CPU cores.
-	preParams, err := keygen.GeneratePreParams(1 * time.Minute)
-	if nil != err {
-		return nil, fmt.Errorf("fail to generate pre parameters: %w", err)
+
+func (t *Tss) decodeKeys(keygenReq KeyGenReq) (cryptokey.PrivKey, []cryptokey.PubKey, error) {
+	sort.Strings(keygenReq.Keys)
+	var pubKeyArray []cryptokey.PubKey
+	for _, item := range keygenReq.Keys {
+		pk, err := sdk.GetAccPubKeyBech32(item)
+		if nil != err {
+			return nil, nil, fmt.Errorf("fail to get account pub key address(%s): %w", item, err)
+		}
+		pubKeyArray = append(pubKeyArray, pk)
 	}
-	pubKey, err := t.getPubKey(keygenReq)
+	priKey, err := t.getPriKey(keygenReq.PrivKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	return priKey, pubKeyArray, nil
+}
+
+func (t *Tss) generateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, error) {
+	priKey, pubKeyArray, err := t.decodeKeys(keygenReq)
 	if nil != err {
 		return nil, fmt.Errorf("fail to get pubkey from the given private key(%s): %w", keygenReq.PrivKey, err)
 	}
 	var localPartyID *tss.PartyID
 	var unSortedPartiesID []*tss.PartyID
 	sort.Strings(keygenReq.Keys)
-	for idx, item := range keygenReq.Keys {
-		pk, err := sdk.GetAccPubKeyBech32(item)
-		if nil != err {
-			return nil, fmt.Errorf("fail to get account pub key address(%s): %w", item, err)
-		}
+	for idx, pk := range pubKeyArray {
 		key := new(big.Int).SetBytes(pk.Bytes())
 		partyID := tss.NewPartyID(strconv.Itoa(idx), "", key)
-		if item == pubKey {
+		if pk == priKey.PubKey() {
 			localPartyID = partyID
 		}
 		unSortedPartiesID = append(unSortedPartiesID, partyID)
@@ -233,6 +241,12 @@ func (t *Tss) generateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, error) {
 	}
 	partiesID := tss.SortPartyIDs(unSortedPartiesID)
 
+	// When using the keygen party it is recommended that you pre-compute the "safe primes" and Paillier secret beforehand because this can take some time.
+	// This code will generate those parameters using a concurrency limit equal to the number of available CPU cores.
+	preParams, err := keygen.GeneratePreParams(1 * time.Minute)
+	if nil != err {
+		return nil, fmt.Errorf("fail to generate pre parameters: %w", err)
+	}
 	// Set up the parameters
 	// Note: The `id` and `moniker` fields are for convenience to allow you to easily track participants.
 	// The `id` should be a unique string representing this party in the network and `moniker` can be anything (even left blank).
@@ -296,9 +310,10 @@ func (t *Tss) processKeyGen(errChan chan struct{}, outCh <-chan tss.Message, end
 		case msg := <-outCh:
 			t.logger.Info().Msgf(">>>>>>>>>>msg: %s", msg.String())
 			buf, r, err := msg.WireBytes()
+			//if we cannot get the wire share, the tss keygen will fail, we just quit.
 			if nil != err {
 				t.logger.Error().Err(err).Msg("fail to get wire bytes")
-				continue
+				return nil, fmt.Errorf("fail to get wire bytes")
 			}
 			tssMsg := TssMessage{
 				Routing: r,
