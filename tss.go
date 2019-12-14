@@ -633,6 +633,7 @@ func (t *Tss) signMessage(req KeySignReq) (*signing.SignatureData, error) {
 	if nil != err {
 		return nil, fmt.Errorf("fail to read local state file: %w", err)
 	}
+	t.logger.Info().Msgf("key sign request, pub key: %s", req.PoolPubKey)
 	msgToSign, err := base64.StdEncoding.DecodeString(req.Message)
 	if nil != err {
 		return nil, fmt.Errorf("fail to decode message(%s): %w", req.Message, err)
