@@ -49,12 +49,14 @@ var (
 
 // TssKeyGenInfo the information used by tss key gen
 type TssKeyGenInfo struct {
+	TSSType    int
 	Party      tss.Party
 	PartyIDMap map[string]*tss.PartyID
 }
 
 // TssMessage is the message we transfer across the wire to other parties
 type TssMessage struct {
+	TSSType int                 `json:"tss_type"`
 	Routing *tss.MessageRouting `json:"routing"`
 	Message []byte              `json:"message"`
 }
@@ -70,6 +72,7 @@ type Tss struct {
 	keyGenInfo *TssKeyGenInfo
 	stopChan   chan struct{} // channel to indicate whether we should stop
 	queuedMsgs chan TssMessage
+	signQueue  chan TssMessage
 	stateLock  *sync.Mutex
 	tssLock    *sync.Mutex
 	priKey     cryptokey.PrivKey
@@ -108,6 +111,7 @@ func NewTss(bootstrapPeers []maddr.Multiaddr, p2pPort, tssPort int, priKeyBytes 
 		stopChan:   make(chan struct{}),
 		partyLock:  &sync.Mutex{},
 		queuedMsgs: make(chan TssMessage, 1024),
+		signQueue:  make(chan TssMessage, 1024),
 		stateLock:  &sync.Mutex{},
 		tssLock:    &sync.Mutex{},
 		priKey:     priKey,
@@ -342,6 +346,7 @@ func (t *Tss) generateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, error) {
 			return
 		}
 		t.setKeyGenInfo(&TssKeyGenInfo{
+			TSSType:    1, // keygen
 			Party:      keyGenParty,
 			PartyIDMap: partyIDMap,
 		})
@@ -365,10 +370,20 @@ func (t *Tss) emptyQueuedMessages() {
 	for {
 		select {
 		case m := <-t.queuedMsgs:
-			t.logger.Debug().Msgf("drop queued message from %s", m.Routing.From.Id)
-		case m := <-t.comm.messages:
-			t.logger.Debug().Msgf("drop queued message from %s", m.PeerID)
+			t.logger.Debug().Msgf("drop queued key gen message from %s", m.Routing.From.Id)
 
+		default:
+			return
+		}
+	}
+}
+
+// emptySignQueueMessages
+func (t *Tss) emptySignQueueMessages() {
+	for {
+		select {
+		case m := <-t.signQueue:
+			t.logger.Debug().Msgf("drop queued key sign message from %s", m.Routing.From.Id)
 		default:
 			return
 		}
@@ -396,6 +411,7 @@ func (t *Tss) processKeyGen(errChan chan struct{}, outCh <-chan tss.Message, end
 				return nil, fmt.Errorf("fail to get wire bytes: %w", err)
 			}
 			tssMsg := TssMessage{
+				TSSType: 1, // KeyGen,
 				Routing: r,
 				Message: buf,
 			}
@@ -523,6 +539,33 @@ func (t *Tss) drainQueuedMessages() {
 	}
 }
 
+func (t *Tss) drainSignMessages() {
+	if len(t.signQueue) == 0 {
+		return
+	}
+	keyGenInfo := t.getKeyGenInfo()
+	if nil == keyGenInfo {
+		return
+	}
+	for {
+		select {
+		case m := <-t.signQueue:
+			t.logger.Debug().Msgf("<<<<< key sign queued party:%s", m.Routing.From.Id)
+			partyID, ok := keyGenInfo.PartyIDMap[m.Routing.From.Id]
+			if !ok {
+				t.logger.Error().Msgf("get message from unknown party :%s", partyID)
+				continue
+			}
+			if _, err := keyGenInfo.Party.UpdateFromBytes(m.Message, partyID, m.Routing.IsBroadcast); nil != err {
+				t.logger.Error().Err(err).Msgf("fail to update from bytes,party ID: %s", partyID)
+			}
+			t.logger.Debug().Msgf("queued sign msg from party:%s", m.Routing.From.Id)
+		default:
+			return
+		}
+	}
+}
+
 // keysign process keysign request
 func (t *Tss) keysign(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -590,9 +633,6 @@ func (t *Tss) signMessage(req KeySignReq) (*signing.SignatureData, error) {
 	if nil != err {
 		return nil, fmt.Errorf("fail to read local state file: %w", err)
 	}
-	if nil != err {
-		return nil, fmt.Errorf("fail to get keygen state data for pubkey(%s): %w", req.PoolPubKey, err)
-	}
 	msgToSign, err := base64.StdEncoding.DecodeString(req.Message)
 	if nil != err {
 		return nil, fmt.Errorf("fail to decode message(%s): %w", req.Message, err)
@@ -640,12 +680,13 @@ func (t *Tss) signMessage(req KeySignReq) (*signing.SignatureData, error) {
 			close(errCh)
 		}
 		t.setKeyGenInfo(&TssKeyGenInfo{
+			TSSType:    2, // keysign
 			Party:      keySignParty,
 			PartyIDMap: partyIDMap,
 		})
 	}()
 
-	defer t.emptyQueuedMessages()
+	defer t.emptySignQueueMessages()
 	result, err := t.processKeySign(errCh, outCh, endCh)
 	if nil != err {
 		return nil, fmt.Errorf("fail to process key sign: %w", err)
@@ -697,6 +738,7 @@ func (t *Tss) processKeySign(errChan chan struct{}, outCh <-chan tss.Message, en
 				continue
 			}
 			tssMsg := TssMessage{
+				TSSType: 2, // keysign
 				Routing: r,
 				Message: buf,
 			}
@@ -717,7 +759,7 @@ func (t *Tss) processKeySign(errChan chan struct{}, outCh <-chan tss.Message, en
 				t.logger.Error().Err(err).Msg("fail to broadcast messages")
 			}
 			// drain the in memory queue
-			t.drainQueuedMessages()
+			t.drainSignMessages()
 		case msg := <-endCh:
 			t.logger.Debug().Msg("we have done the key sign")
 			return &msg, nil
@@ -798,12 +840,19 @@ func (t *Tss) processComm() {
 			}
 
 			keyGenInfo := t.getKeyGenInfo()
-			if keyGenInfo == nil {
+			if keyGenInfo == nil ||
+				keyGenInfo.TSSType != tssMsg.TSSType {
 				// we are not doing any keygen at the moment, so we queue it
 				t.logger.Debug().Msg("queue the message")
-				t.queuedMsgs <- tssMsg
+				switch tssMsg.TSSType {
+				case 1: // keygen
+					t.queuedMsgs <- tssMsg
+				case 2: // keysign
+					t.signQueue <- tssMsg
+				}
 				continue
 			}
+
 			partyID, ok := keyGenInfo.PartyIDMap[tssMsg.Routing.From.Id]
 			if !ok {
 				t.logger.Error().Msgf("get message from unknown party :%s, peer: %s", partyID, m.PeerID.String())
