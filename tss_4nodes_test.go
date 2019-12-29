@@ -357,7 +357,7 @@ func (t *TssTestSuite) testVerMsgWrongHash(c *C, tssNode *Tss, senderID *btss.Pa
 	wrappedMsg = fabricateVerMsg(c, msgHash2, msgKey)
 	err = tssNode.processOneMessage(wrappedMsg, tssNode.partyIDtoP2PID[partiesID[2].Id].String())
 	c.Assert(localItem.ConfirmedList, HasLen, 3)
-	c.Assert(err, ErrorMatches, "hash is not in consistency")
+	c.Assert(err, ErrorMatches, "*hash is not in consistency")
 }
 
 func (t *TssTestSuite) TestProcessVerMessage(c *C) {
