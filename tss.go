@@ -63,10 +63,10 @@ type Tss struct {
 	wg                  sync.WaitGroup
 	partyLock           *sync.Mutex
 	partyInfo           *PartyInfo
-	stopChan            chan struct{}        // channel to indicate whether we should stop
-	keyGenQueuedMsgs    chan QueuedMsg       // messages queued up before local party is even ready
-	keySignQueuedMsgs   chan QueuedMsg       // messages queued up for key sign
-	broadcastChannel    chan *WrappedMessage // channel we used to broadcast message to other parties
+	stopChan            chan struct{}                  // channel to indicate whether we should stop
+	keyGenQueuedMsgs    chan QueuedMsg                 // messages queued up before local party is even ready
+	keySignQueuedMsgs   chan QueuedMsg                 // messages queued up for key sign
+	broadcastChannel    chan *BroadcastWrapppedMessage // channel we used to broadcast message to other parties
 	stateLock           *sync.Mutex
 	tssLock             *sync.Mutex
 	priKey              cryptokey.PrivKey
@@ -116,7 +116,7 @@ func internalNewTss(bootstrapPeers []maddr.Multiaddr, p2pPort, tssPort int, priK
 		partyLock:           &sync.Mutex{},
 		keyGenQueuedMsgs:    make(chan QueuedMsg, 1024),
 		keySignQueuedMsgs:   make(chan QueuedMsg, 1024),
-		broadcastChannel:    make(chan *WrappedMessage),
+		broadcastChannel:    make(chan *BroadcastWrapppedMessage),
 		stateLock:           &sync.Mutex{},
 		tssLock:             &sync.Mutex{},
 		priKey:              priKey,
@@ -395,17 +395,13 @@ func (t *Tss) processBroadcastChannel() {
 		case <-t.stopChan:
 			return // time to stop
 		case msg := <-t.broadcastChannel:
-			wireMsgBytes, err := json.Marshal(msg)
+			wireMsgBytes, err := json.Marshal(msg.wrappedMsg)
 			if nil != err {
 				t.logger.Error().Err(err).Msg("fail to marshal a wrapped message to json bytes")
 				continue
 			}
-			peerIDs, err := t.getAllPartyPeerIDs()
-			if nil != err {
-				t.logger.Error().Err(err).Msg("fail to get all partys peer ids")
-			}
-			t.logger.Debug().Msgf("broadcast message %s to %+v", msg.MessageType, peerIDs)
-			if err := t.comm.Broadcast(peerIDs, wireMsgBytes); nil != err {
+			t.logger.Debug().Msgf("broadcast message %s to %+v", msg.wrappedMsg.MessageType, msg.peers)
+			if err := t.comm.Broadcast(msg.peers, wireMsgBytes); nil != err {
 				t.logger.Error().Err(err).Msg("fail to broadcast confirm message to all other parties")
 			}
 		}
@@ -437,7 +433,7 @@ func (t *Tss) processComm() {
 // updateLocal will apply the wireMsg to local keygen/keysign party
 func (t *Tss) updateLocal(wireMsg *WireMessage) error {
 	if nil == wireMsg {
-		t.logger.Warn().Msg("wire msg is nil")
+		return fmt.Errorf("wire msg is nil")
 	}
 	partyInfo := t.getPartyInfo()
 	if partyInfo == nil {
@@ -522,7 +518,6 @@ func (t *Tss) hashCheck(localCacheItem *LocalCacheItem) (string, error) {
 	dataOwner := localCacheItem.Msg.Routing.From
 	dataOwnerP2PID, ok := t.partyIDtoP2PID[dataOwner.Id]
 	if !ok {
-		t.logger.Warn().Msgf("error in find the data Owner P2PID\n")
 		return dataOwnerP2PID.String(), errors.New("error in find the data Owner P2PID")
 	}
 	localCacheItem.lock.Lock()
@@ -538,7 +533,6 @@ func (t *Tss) hashCheck(localCacheItem *LocalCacheItem) (string, error) {
 		if targetHashValue == hashValue {
 			continue
 		}
-		t.logger.Error().Msgf("hash is not in consistency!!")
 		return P2PID, errors.New("hash is not in consistency")
 	}
 	return "", nil
@@ -632,8 +626,7 @@ func (t *Tss) processVerMsg(broadcastConfirmMsg *BroadcastConfirmMessage) error 
 			if err == HashFromOwnerErr {
 				return nil
 			}
-			t.logger.Error().Msgf("The consistency check fail of node %s\n", msg)
-			return err
+			return fmt.Errorf("consistency check fail, msg(%s) %w", msg, err)
 		}
 
 		if err := t.updateLocal(localCacheItem.Msg); nil != err {
@@ -645,6 +638,38 @@ func (t *Tss) processVerMsg(broadcastConfirmMsg *BroadcastConfirmMessage) error 
 	}
 	return nil
 }
+func (t *Tss) sendBroadcastConfirmMsg(key, msgHash string, msgType THORChainTSSMessageType) error {
+	peers, err := t.getAllPartyPeerIDs()
+	if err != nil {
+		return fmt.Errorf("fail to get all the peers: %w", err)
+	}
+	// P2PID will be filled up by the receiver.
+	broadcastConfirmMsg := &BroadcastConfirmMessage{
+		P2PID: "",
+		Key:   key,
+		Hash:  msgHash,
+	}
+
+	buf, err := json.Marshal(broadcastConfirmMsg)
+	if nil != err {
+		return fmt.Errorf("fail to marshal borad cast confirm message: %w", err)
+	}
+	t.logger.Debug().Msg("broadcast VerMsg to all other parties")
+	broadcastWrappedMsg := &BroadcastWrapppedMessage{
+		wrappedMsg: &WrappedMessage{
+			MessageType: getBroadcastMessageType(msgType),
+			Payload:     buf,
+		},
+		peers: peers,
+	}
+	select {
+	case t.broadcastChannel <- broadcastWrappedMsg:
+		return nil
+	case <-t.stopChan:
+		// time to stop
+		return errors.New("stop signal")
+	}
+}
 
 // processTSSMsg
 func (t *Tss) processTSSMsg(wireMsg *WireMessage, msgType THORChainTSSMessageType) error {
@@ -655,19 +680,16 @@ func (t *Tss) processTSSMsg(wireMsg *WireMessage, msgType THORChainTSSMessageTyp
 		t.logger.Debug().Msgf("msg from %s to %+v", wireMsg.Routing.From, wireMsg.Routing.To)
 		return t.updateLocal(wireMsg)
 	}
-	// broadcast message , we save a copy locally , and then tell all others what we got
 	msgHash, err := bytesToHashString(wireMsg.Message)
 	if nil != err {
 		return fmt.Errorf("fail to calculate hash of the wire message: %w", err)
 	}
-	partyInfo := t.getPartyInfo()
 	key := wireMsg.GetCacheKey()
-	//P2PID will be filled up by the receiver.
-	broadcastConfirmMsg := &BroadcastConfirmMessage{
-		P2PID: "",
-		Key:   key,
-		Hash:  msgHash,
+	if err := t.sendBroadcastConfirmMsg(key, msgHash, msgType); err != nil {
+		return fmt.Errorf("fail to broadcast confirm msg to all other parties: %w", err)
 	}
+
+	partyInfo := t.getPartyInfo()
 	localCacheItem := t.tryGetLocalCacheItem(key)
 	if nil == localCacheItem {
 		t.logger.Debug().Msgf("++%s doesn't exist yet,add a new one", key)
@@ -694,22 +716,7 @@ func (t *Tss) processTSSMsg(wireMsg *WireMessage, msgType THORChainTSSMessageTyp
 			return fmt.Errorf("fail to update the message to local party: %w", err)
 		}
 	}
-	buf, err := json.Marshal(broadcastConfirmMsg)
-	if nil != err {
-		return fmt.Errorf("fail to marshal borad cast confirm message: %w", err)
-	}
-	t.logger.Debug().Msg("broadcast VerMsg to all other parties")
-
-	select {
-	case t.broadcastChannel <- &WrappedMessage{
-		MessageType: getBroadcastMessageType(msgType),
-		Payload:     buf,
-	}:
-		return nil
-	case <-t.stopChan:
-		// time to stop
-		return nil
-	}
+	return nil
 }
 func getBroadcastMessageType(msgType THORChainTSSMessageType) THORChainTSSMessageType {
 	switch msgType {
