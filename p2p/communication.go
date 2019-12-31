@@ -51,15 +51,15 @@ type Communication struct {
 }
 
 // NewCommunication create a new instance of Communication
-func NewCommunication(rendezvous string, bootstrapPeers []maddr.Multiaddr, port int) (*Communication, error) {
+func NewCommunication(rendezvous string, bootstrapPeers []maddr.Multiaddr, port int) (Communication, error) {
 	if len(rendezvous) == 0 {
 		rendezvous = DefaultRendezvous
 	}
 	addr, err := maddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
 	if nil != err {
-		return nil, fmt.Errorf("fail to create listen addr: %w", err)
+		return Communication{}, fmt.Errorf("fail to create listen addr: %w", err)
 	}
-	return &Communication{
+	return Communication{
 		Rendezvous:       rendezvous,
 		bootstrapPeers:   bootstrapPeers,
 		logger:           log.With().Str("module", "communication").Logger(),

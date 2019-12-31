@@ -43,7 +43,7 @@ type PartyInfo struct {
 type TssServer struct {
 	logger           zerolog.Logger
 	httpsServer      *http.Server
-	p2pCommunication *p2p.Communication
+	p2pCommunication p2p.Communication
 	priKey           cryptokey.PrivKey
 	preParams        *bkeygen.LocalPreParams
 	port             int
