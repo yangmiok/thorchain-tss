@@ -139,7 +139,7 @@ func (t *TssTestSuite) TestSignMessage(c *C) {
 	sk, err := common.GetPriKey(testPriKey)
 	c.Assert(err, IsNil)
 	c.Assert(sk, NotNil)
-	keySignInstance := keysign.NewTssKeySign("", "", conf, sk, nil, nil)
+	keySignInstance := keysign.NewTssKeySign("", "", conf, sk, nil, nil, nil)
 	signatureData, err := keySignInstance.SignMessage(req)
 	c.Assert(err, NotNil)
 	c.Assert(signatureData, IsNil)
@@ -181,10 +181,10 @@ func doNodeSyncTest(c *C, peers []peer.ID, targets []peer.ID) {
 		receiver <- &msg
 		expected = append(expected, each.String())
 	}
-	returnedPeers, err := tssCommonStruct.NodeSync(receiver, p2p.TSSKeySignVerMsg)
-	sort.Strings(returnedPeers)
+	standbyPeers, err := tssCommonStruct.NodeSync(receiver, p2p.TSSKeySignVerMsg)
+	sort.Strings(standbyPeers)
 	sort.Strings(expected)
-	c.Assert(returnedPeers, DeepEquals, expected)
+	c.Assert(standbyPeers, DeepEquals, expected)
 	if len(peers) == len(targets) {
 		c.Assert(err, IsNil)
 	} else {
