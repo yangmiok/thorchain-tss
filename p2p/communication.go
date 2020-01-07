@@ -350,6 +350,8 @@ func (c *Communication) Start(priKeyBytes []byte) error {
 // Stop communication
 func (c *Communication) Stop() error {
 	close(c.stopChan)
+	c.host.RemoveStreamHandler(c.protocolID)
+	c.host.Close()
 	c.wg.Wait()
 	return nil
 }
