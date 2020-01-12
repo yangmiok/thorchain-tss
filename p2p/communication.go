@@ -274,7 +274,10 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	}
 
 	h, err := libp2p.New(ctx,
-		libp2p.ListenAddrs([]maddr.Multiaddr{c.listenAddr}...), libp2p.Identity(p2pPriKey),libp2p.EnableRelay(circuit.OptHop),
+		libp2p.ListenAddrs([]maddr.Multiaddr{c.listenAddr}...),
+		libp2p.Identity(p2pPriKey),
+		libp2p.EnableRelay(circuit.OptHop),
+		libp2p.NATPortMap(),
 	)
 	if nil != err {
 		return fmt.Errorf("fail to create p2p host: %w", err)

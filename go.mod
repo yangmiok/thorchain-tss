@@ -12,6 +12,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.6.1
 	github.com/ipfs/go-log v0.0.1
 	github.com/libp2p/go-libp2p v0.4.2
+	github.com/libp2p/go-libp2p-circuit v0.1.4
 	github.com/libp2p/go-libp2p-core v0.2.4
 	github.com/libp2p/go-libp2p-discovery v0.1.0
 	github.com/libp2p/go-libp2p-kad-dht v0.3.0
