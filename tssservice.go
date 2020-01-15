@@ -365,7 +365,7 @@ func (t *TssServer) keySign(w http.ResponseWriter, r *http.Request) {
 	t.tssKeySignLocker.Lock()
 	startTime := time.Now()
 	defer func() {
-		t.tssKeyGenLocker.Unlock()
+		t.tssKeySignLocker.Unlock()
 		t.logger.Info().Msgf(">>>>>>time for keysign is %s\n", time.Since(startTime).String())
 	}()
 	var keySignReq keysign.KeySignReq
