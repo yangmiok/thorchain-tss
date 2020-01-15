@@ -1,0 +1,22 @@
+version: '3'
+
+services:
+  tss_local:
+    container_name: tsslocal
+    image: golang:1.13
+    working_dir: /home/user/tss
+    command: bash /home/user/config/run.sh
+    stdin_open: true
+    tty: true
+    ports:
+      - 8320:8080
+      - 8081:8081
+      - 6668:6668
+    # logging:
+    #   driver: none
+    environment:
+    - LOG=${LOG:-gaiad.log}
+    volumes:
+    - ./Data/data_local:/home/user/config:Z
+    -  /root/tss/go-tss:/home/user/tss:z
+    network_mode: host

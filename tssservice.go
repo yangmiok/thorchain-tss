@@ -83,7 +83,7 @@ func (t *TssServer) infoHandler(verbose bool) http.Handler {
 // Tssport should only listen to the loopback
 func NewTssHttpServer(tssPort int, t *TssServer) *http.Server {
 	server := &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%d", tssPort),
+		Addr:         fmt.Sprintf(":%d", tssPort),
 		Handler:      t.tssNewHandler(true),
 		ReadTimeout:  time.Second * 10,
 		WriteTimeout: time.Second * 10,
@@ -289,7 +289,13 @@ func (t *TssServer) ping(w http.ResponseWriter, _ *http.Request) {
 
 func (t *TssServer) keygen(w http.ResponseWriter, r *http.Request) {
 	t.tssKeyGenLocker.Lock()
-	defer t.tssKeyGenLocker.Unlock()
+	startTime := time.Now()
+
+	defer func() {
+		 t.tssKeyGenLocker.Unlock()
+		 t.logger.Info().Msgf(">>>>>>time for keygen is %s\n", time.Since(startTime).String())
+	}()
+
 	status := common.Success
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -357,7 +363,11 @@ func (t *TssServer) keygen(w http.ResponseWriter, r *http.Request) {
 
 func (t *TssServer) keySign(w http.ResponseWriter, r *http.Request) {
 	t.tssKeySignLocker.Lock()
-	defer t.tssKeySignLocker.Unlock()
+	startTime := time.Now()
+	defer func() {
+		t.tssKeyGenLocker.Unlock()
+		t.logger.Info().Msgf(">>>>>>time for keysign is %s\n", time.Since(startTime).String())
+	}()
 	var keySignReq keysign.KeySignReq
 	keySignFlag := common.Success
 	if r.Method != http.MethodPost {

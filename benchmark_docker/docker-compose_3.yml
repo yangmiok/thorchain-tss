@@ -1,0 +1,83 @@
+version: '3'
+
+services:
+  tss0:
+    container_name: tss0
+    image: golang:1.13
+    working_dir: /home/user/tss
+    # command: bash /home/user/config/run.sh
+    stdin_open: true
+    tty: true
+    # depends_on:
+    #   - tss1
+    ports:
+      - 8320:8080
+      - 6668:6668
+    # logging:
+    #   driver: none
+    environment:
+    - LOG=${LOG:-gaiad.log}
+    volumes:
+    - ./Data/data0:/home/user/config:Z
+    -  /Users/yb/go/src/gitlab.com/thorchain/tss/go-tss:/home/user/tss:z
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.2
+
+
+  tss2:
+    container_name: tss2
+    image: golang:1.13
+    working_dir: /home/user/tss
+    # command: bash /home/user/config/run.sh
+    stdin_open: true
+    tty: true
+    ports:
+    - 8322:8080
+    - 6669:6668
+    # depends_on:
+    #   - tss1
+    # logging:
+    #   driver: none
+    environment:
+    - LOG=${LOG:-gaiad.log}
+    volumes:
+    - ./Data/data2:/home/user/config:Z
+    -  /Users/yb/go/src/gitlab.com/thorchain/tss/go-tss:/home/user/tss:z
+
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.4
+
+  tss3:
+    container_name: tss3
+    image: golang:1.13
+    working_dir: /home/user/tss
+    # command: bash /home/user/config/run.sh
+    stdin_open: true
+    tty: true
+    ports:
+    - 8323:8080
+    - 6670:6668
+
+    # depends_on:
+    #   - tss1
+    # logging:
+    #   driver: none
+    environment:
+    - LOG=${LOG:-gaiad.log}
+    volumes:
+    - ./Data/data3:/home/user/config:Z
+    -  /Users/yb/go/src/gitlab.com/thorchain/tss/go-tss:/home/user/tss:z
+
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.5
+
+networks:
+  localnet:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+      - subnet: 192.168.10.0/16
