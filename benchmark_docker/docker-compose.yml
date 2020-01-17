@@ -18,5 +18,5 @@ services:
     - LOG=${LOG:-gaiad.log}
     volumes:
     - ./Data/data_local:/home/user/config:Z
-    -  /root/tss/go-tss:/home/user/tss:z
+    -  ../../go-tss:/home/user/tss:z
     network_mode: host
