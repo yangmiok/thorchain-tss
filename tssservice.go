@@ -85,8 +85,8 @@ func NewTssHttpServer(tssPort int, t *TssServer) *http.Server {
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", tssPort),
 		Handler:      t.tssNewHandler(true),
-		ReadTimeout:  time.Second * 10,
-		WriteTimeout: time.Second * 10,
+		ReadTimeout:  time.Second * 300,
+		WriteTimeout: time.Second * 300,
 	}
 	return server
 }
