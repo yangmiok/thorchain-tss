@@ -16,88 +16,12 @@ import (
 
 	sdkkey "github.com/binance-chain/go-sdk/keys"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"gitlab.com/thorchain/bepswap/thornode/cmd"
+	"gitlab.com/thorchain/thornode/cmd"
 )
 
 const baseTssPort = 8080
 
-//func main() {
-//	app := cli.NewApp()
-//	var path string
-//	var path2 string
-//
-//	app.Commands = []cli.Command{
-//		{
-//			Name:    "add",
-//			Aliases: []string{"a"},
-//			Usage:   "add a task to the list",
-//			Action: func(c *cli.Context) error {
-//				fmt.Println("added task: ", c.Args().First())
-//				return nil
-//			},
-//		},
-//		{
-//			Name:    "complete",
-//			Aliases: []string{"c"},
-//			Usage:   "complete a task on the list",
-//			Action: func(c *cli.Context) error {
-//				fmt.Println("completed task: ", c.Args().First())
-//				return nil
-//			},
-//		},
-//		{
-//			Name:    "template",
-//			Aliases: []string{"t"},
-//			Usage:   "options for task templates",
-//			Subcommands: []cli.Command{
-//				{
-//					Name:  "add",
-//					Usage: "add a new template",
-//					Flags: []cli.Flag{
-//						cli.StringFlag{
-//							Name:  "path1",
-//							Value: "bin yu",
-//							Usage: "template path",
-//							Destination:&path,
-//						},
-//					cli.StringFlag{
-//						Name:  "path",
-//						Usage: "template path",
-//						Destination:&path2,
-//					},
-//				},
-//				Action: func(c *cli.Context) error {
-//						fmt.Printf("new task template: %s from %s\n", c.Args().First(), c.String("path"))
-//						return nil
-//					},
-//				},
-//				{
-//					Name:  "remove",
-//					Usage: "remove an existing template",
-//					Action: func(c *cli.Context) error {
-//						fmt.Println("removed task template: ", c.Args().First())
-//						return nil
-//					},
-//				},
-//			},
-//		},
-//	}
-//
-//	cli.VersionFlag = cli.BoolFlag{
-//		Name:  "print-version, V",
-//		Usage: "print only the version",
-//	}
-//
-//	app.Name = "partay"
-//	app.Version = "19.99.0"
-//	app.Run(os.Args)
-//
-//	if err := app.Run(os.Args); err != nil {
-//		log.Fatalln(err)
-//	}
-//	fmt.Printf(">>>>>>>>>>>>%s\n", path)
-//	fmt.Printf(">>>>>>>>>>>>%s\n", path2)
-//}
+
 // KeySignResp key sign response
 type Status byte
 
@@ -126,6 +50,12 @@ type KeyGenResp struct {
 type KeyGenReq struct {
 	Keys []string `json:"keys"`
 }
+
+type AwsIps[][]struct {
+	Instance string `json:"Instance"`
+	PubIP    string `json:"PubIp"`
+}
+
 
 func sendTestRequest(url string, request []byte) []byte {
 	var resp *http.Response
@@ -225,7 +155,7 @@ func testKeyGen(testPubKeys []string, ips []string) string {
 	return keyGenRespArr[0].PubKey
 }
 
-func docommand(ip, remoteFile, filePath, pemLocation string, send bool) {
+func docommand(ip, remoteFile, filePath, pemLocation string, send bool, username string, digitalocean bool) {
 	var out bytes.Buffer
 	cmd := exec.Command("bash")
 	cmdWriter, _ := cmd.StdinPipe()
@@ -233,10 +163,19 @@ func docommand(ip, remoteFile, filePath, pemLocation string, send bool) {
 	cmd.Stdout = &out
 	cmdString := ""
 	if send {
-		cmdString = fmt.Sprintf("scp -i %s %s %s@%s:%s", pemLocation, filePath, "ubuntu", ip, remoteFile)
+		if digitalocean{
+			cmdString = fmt.Sprintf("scp  %s %s@%s:%s",filePath, username, ip, remoteFile)
+		}else{
+
+			cmdString = fmt.Sprintf("scp -i %s %s %s@%s:%s", pemLocation, filePath, username, ip, remoteFile)
+		}
 		fmt.Println(cmdString)
 	} else {
-		cmdString = fmt.Sprintf("scp -i %s %s@%s:%s %s", pemLocation, "ubuntu", ip, remoteFile, filePath)
+		if digitalocean{
+			cmdString = fmt.Sprintf("scp  %s@%s:%s %s", username, ip, remoteFile, filePath)
+		}else{
+			cmdString = fmt.Sprintf("scp -i %s %s@%s:%s %s", pemLocation, username, ip, remoteFile, filePath)
+		}
 	}
 	cmdWriter.Write([]byte(cmdString + "\n"))
 	cmdWriter.Write([]byte("exit" + "\n"))
@@ -248,15 +187,15 @@ func docommand(ip, remoteFile, filePath, pemLocation string, send bool) {
 
 }
 
-func collectConfigure(ips []string, remoteFile, remoteBootstrapFile, bootStrapIP string) {
+func collectConfigure(ips []string, remoteFile, remoteBootstrapFile, bootStrapIP string, username string, isdigitalOcean bool) {
 
 	for index, each := range ips {
-		filepath := fmt.Sprintf("./storage/%d\n", index)
+		filepath := fmt.Sprintf("benchmark_client/storage/%d\n", index)
 		fmt.Print(filepath)
-		docommand(each, remoteFile, filepath, "~/Documents/thorchain_bin.pem", false)
+		docommand(each, remoteFile, filepath, "~/Documents/thorchain_bin.pem", false, username, isdigitalOcean)
 	}
-	bootStrapFilePath := fmt.Sprintf("./storage/bootstrap")
-	docommand(bootStrapIP, remoteBootstrapFile, bootStrapFilePath, "~/Documents/thorchain_bin.pem", false)
+	bootStrapFilePath := fmt.Sprintf("benchmark_client/storage/bootstrap")
+	docommand(bootStrapIP, remoteBootstrapFile, bootStrapFilePath, "~/Documents/thorchain_bin.pem", false,username, isdigitalOcean)
 }
 
 func setupBech32Prefix() {
@@ -279,7 +218,7 @@ func createNewConfigure(start, num int) []string {
 		base64PrivKey := base64.StdEncoding.EncodeToString([]byte(privkeyStr))
 		//fileName := fmt.Sprintf("./storage/%d", i)
 		//os.Mkdir(fileName, os.ModePerm)
-		input, err := ioutil.ReadFile("./storage/run_template.sh")
+		input, err := ioutil.ReadFile("benchmark_client/storage/run_template.sh")
 		if err != nil {
 			panic("cannot open tempalte file")
 		}
@@ -293,7 +232,7 @@ func createNewConfigure(start, num int) []string {
 			}
 		}
 		output := strings.Join(lines, "\n")
-		target := fmt.Sprintf("./storage/%d/run.sh", i)
+		target := fmt.Sprintf("benchmark_client/storage/%d/run.sh", i)
 		err = ioutil.WriteFile(target, []byte(output), 0644)
 		if err != nil {
 			log.Fatalln(err)
@@ -302,29 +241,64 @@ func createNewConfigure(start, num int) []string {
 	return newPubKeys
 }
 
-func sendRemote(ips []string, bootStrapIP, remoteFile, remoteBootstrapFile string) {
+func sendRemote(ips []string, bootStrapIP, remoteFile, remoteBootstrapFile string, username string, isDigitalOcean bool) {
 	for index, each := range ips {
-		filepath := fmt.Sprintf("./storage/%d/run.sh", index)
-		docommand(each, remoteFile, filepath, "~/Documents/thorchain_bin.pem", true)
+		filepath := fmt.Sprintf("benchmark_client/storage/%d/run.sh", index)
+		docommand(each, remoteFile, filepath, "~/Documents/thorchain_bin.pem", true, username, isDigitalOcean)
 	}
-	bootStrapFilePath := fmt.Sprintf("./storage/0/run.sh")
-	docommand(bootStrapIP, remoteBootstrapFile, bootStrapFilePath, "~/Documents/thorchain_bin.pem", true)
+	bootStrapFilePath := fmt.Sprintf("benchmark_client/storage/0/run.sh")
+	docommand(bootStrapIP, remoteBootstrapFile, bootStrapFilePath, "~/Documents/thorchain_bin.pem", true, username, isDigitalOcean)
 }
+
+func generatehostIPs(path string,outfile string){
+	jsonFile, err := os.Open(path)
+	if err != nil{
+		fmt.Println("error in open the IP json file")
+	}
+	defer jsonFile.Close()
+	byteValue, err := ioutil.ReadAll(jsonFile)
+	if err != nil{
+		fmt.Println("error in load the IP json file")
+	}
+
+	var awsIps AwsIps
+	var ips []string
+	json.Unmarshal(byteValue, &awsIps)
+	for _,eachRegion := range awsIps{
+		for _,instance := range eachRegion{
+			ips = append(ips, instance.PubIP)
+		}
+	}
+	writefd, err:= os.Create(outfile)
+	if err != nil{
+		fmt.Println("error in open the file to write")
+		return
+	}
+	defer writefd.Close()
+	for _, each := range ips{
+		fmt.Println(each)
+		_, err :=writefd.WriteString(each+"\n")
+		if err != nil{
+			fmt.Println(err)
+		}
+	}
+}
+
 
 func main() {
 
 	remoteFile := "/home/ubuntu/go-tss/benchmark_docker/Data/data_local/run.sh"
 	remoteBootStrapFile := "/home/ubuntu/go-tss/benchmark_docker/Data/data_bootstrap/run.sh"
 
-	bootStrapIP := "3.106.132.198"
+	bootStrapIP := "138.197.211.179"
 
-	hosts, err := ioutil.ReadFile("./storage/currenthosts.txt")
+	hosts, err := ioutil.ReadFile("benchmark_client/storage/currenthosts.txt")
 	if err != nil {
-		panic("cannot open tempalte file")
+		panic("cannot open template file")
 	}
 	hostips := strings.Split(string(hosts), "\n")
 
-	input, err := ioutil.ReadFile("./storage/testkeys.txt")
+	input, err := ioutil.ReadFile("benchmark_client/storage/testkeys.txt")
 	if err != nil {
 		panic("cannot open tempalte file")
 	}
@@ -351,21 +325,30 @@ func main() {
 		}
 		testKeySign(os.Args[3], hostips[:nodesNum])
 	case "3":
-		collectConfigure(hostips, remoteFile, remoteBootStrapFile, bootStrapIP)
+		collectConfigure(hostips, remoteFile, remoteBootStrapFile, bootStrapIP, "root", true)
 
 	case "4":
+		// create new environment, it will overwrite current keypairs!!!
 		startPoint := 0
 		numbers := 33
 		newPubKeys := createNewConfigure(startPoint, numbers)
 		output := strings.Join(newPubKeys, "\n")
-		target := fmt.Sprintf("./storage/testkeys.txt")
+		target := fmt.Sprintf("benchmark_client/storage/testkeys.txt")
 		err = ioutil.WriteFile(target, []byte(output), 0644)
 		if err != nil {
 			log.Fatalln(err)
 		}
-
 	case "5":
-		sendRemote(hostips, bootStrapIP, remoteFile, remoteBootStrapFile)
+		// send the keypairs to remote and configure the remote machines
+		sendRemote(hostips, bootStrapIP, remoteFile, remoteBootStrapFile, "root", true)
+	case "6":
+		// run command
+		//aws ec2 --region ap-southeast-1 \
+		//describe-instances \
+		//--filter "Name=key-name, Values=thorchain_bin"\
+		//--query 'Reservations[*].Instances[*].{Instance:InstanceId,Subnet:PublicIpAddress}' \
+		//--output json
+		// to generate the IP address of all the instance firstly and copy the json file to rawip.txt
+		generatehostIPs("benchmark_client/storage/ips.json", "benchmark_client/storage/currenthosts.txt")
 	}
-
 }

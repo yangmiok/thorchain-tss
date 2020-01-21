@@ -1,0 +1,142 @@
+[
+  [
+    {
+      "Instance": "i-0b6224329bd6776f4",
+      "PubIp": "54.254.143.34"
+    },
+    {
+      "Instance": "i-0332af91e5f08a8b3",
+      "PubIp": "52.221.210.185"
+    },
+    {
+      "Instance": "i-008a5b7c6f18be9f8",
+      "PubIp": "13.250.20.101"
+    },
+    {
+      "Instance": "i-0879c49d14fdb2bcc",
+      "PubIp": "54.169.105.238"
+    },
+    {
+      "Instance": "i-0e742fa380ffa2616",
+      "PubIp": "13.229.62.35"
+    },
+    {
+      "Instance": "i-03a222bf0209baa88",
+      "PubIp": "54.169.254.124"
+    },
+    {
+      "Instance": "i-0d03a4d6cc6ec45be",
+      "PubIp": "54.169.25.157"
+    },
+    {
+      "Instance": "i-0624d4fb072993815",
+      "PubIp": "13.250.65.143"
+    },
+    {
+      "Instance": "i-0fe1be6f1c5e363a7",
+      "PubIp": "52.77.252.145"
+    },
+    {
+      "Instance": "i-0ad2c7651efa037af",
+      "PubIp": "54.169.12.136"
+    },
+    {
+      "Instance": "i-0db8a41d20d9a95d2",
+      "PubIp": "13.229.90.100"
+    }
+  ],
+
+  [
+    {
+      "Instance": "i-0c82faffa172c0eec",
+      "PubIp": "3.104.123.109"
+    },
+    {
+      "Instance": "i-0ad2b861f3c5bc4f8",
+      "PubIp": "3.104.116.188"
+    },
+    {
+      "Instance": "i-09db983862cbe3239",
+      "PubIp": "13.239.35.69"
+    },
+    {
+      "Instance": "i-0c6cf8c3e1ba5cb25",
+      "PubIp": "52.65.123.155"
+    },
+    {
+      "Instance": "i-0c79342b82781d45c",
+      "PubIp": "52.63.59.39"
+    },
+    {
+      "Instance": "i-094eaf9702738b7f4",
+      "PubIp": "13.210.101.242"
+    },
+    {
+      "Instance": "i-0fb9689b6dc709c9a",
+      "PubIp": "13.211.190.183"
+    },
+    {
+      "Instance": "i-0a18f2d972d231f65",
+      "PubIp": "54.206.104.136"
+    },
+    {
+      "Instance": "i-06b9acb540bfcf526",
+      "PubIp": "54.206.108.18"
+    },
+    {
+      "Instance": "i-02868cc8e89582f27",
+      "PubIp": "13.236.200.107"
+    },
+    {
+      "Instance": "i-05f7bfd98bb432adf",
+      "PubIp": "3.106.130.114"
+    }
+  ],
+
+  [
+    {
+      "Instance": "i-0f39579a021641256",
+      "PubIp": "3.215.153.12"
+    },
+    {
+      "Instance": "i-0105b45b8bef25c7e",
+      "PubIp": "34.236.243.252"
+    },
+    {
+      "Instance": "i-070a7fe837a336de1",
+      "PubIp": "3.227.232.93"
+    },
+    {
+      "Instance": "i-05575051a3a39d63e",
+      "PubIp": "3.231.22.123"
+    },
+    {
+      "Instance": "i-02570dcc4c8ac5277",
+      "PubIp": "3.221.150.157"
+    },
+    {
+      "Instance": "i-05251e89a581e11d1",
+      "PubIp": "18.208.205.85"
+    },
+    {
+      "Instance": "i-0851a80d7a5548954",
+      "PubIp": "18.205.3.83"
+    },
+    {
+      "Instance": "i-0c4be6009fa901e07",
+      "PubIp": "3.210.201.17"
+    },
+    {
+      "Instance": "i-06141f5d4f55a3aa8",
+      "PubIp": "3.234.141.40"
+    },
+    {
+      "Instance": "i-04fff9a22e67eb63d",
+      "PubIp": "54.237.149.46"
+    },
+    {
+      "Instance": "i-0c0ebfc8b4422ec6f",
+      "PubIp": "18.213.110.203"
+    }
+  ]
+]
