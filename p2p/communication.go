@@ -58,6 +58,7 @@ type Communication struct {
 	subscriberLocker *sync.Mutex
 	streamCount      int64
 	BroadcastMsgChan chan *BroadcastMsgChan
+	cachedP2PAddr    map[peer.ID]peer.AddrInfo
 }
 
 // NewCommunication create a new instance of Communication
@@ -78,6 +79,7 @@ func NewCommunication(rendezvous string, bootstrapPeers []maddr.Multiaddr, port 
 		subscriberLocker: &sync.Mutex{},
 		streamCount:      0,
 		BroadcastMsgChan: make(chan *BroadcastMsgChan, 1024),
+		cachedP2PAddr:    make(map[peer.ID]peer.AddrInfo),
 	}, nil
 }
 
@@ -93,6 +95,40 @@ func (c *Communication) Broadcast(peers []peer.ID, msg []byte) {
 	go c.broadcastToPeers(peers, msg)
 }
 
+func (c *Communication) updateCachedP2PAddr(peers []peer.ID) error {
+	ctx, cancel := context.WithTimeout(context.Background(), TimeoutBroadcast)
+	defer cancel()
+	peerChan, err := c.routingDiscovery.FindPeers(ctx, c.rendezvous)
+	if nil != err {
+		c.logger.Error().Err(err).Msg("fail to find any peers")
+		return err
+	}
+	for {
+		select {
+		case <-c.stopChan:
+			return nil // we need to stop the server
+		case ai, more := <-peerChan:
+			if !more {
+				return nil
+			}
+			c.SaveAddrToCache(ai, peers)
+		}
+	}
+}
+
+func (c *Communication) getPeersFromCache(peers []peer.ID) ([]peer.AddrInfo, []peer.ID) {
+	var sendersAddr []peer.AddrInfo
+	var notInlist []peer.ID
+	for _, each := range peers {
+		addr, ok := c.cachedP2PAddr[each]
+		if !ok {
+			notInlist = append(notInlist, each)
+		}
+		sendersAddr = append(sendersAddr, addr)
+	}
+	return sendersAddr, notInlist
+}
+
 func (c *Communication) broadcastToPeers(peers []peer.ID, msg []byte) {
 	defer c.wg.Done()
 	defer func() {
@@ -102,26 +138,34 @@ func (c *Communication) broadcastToPeers(peers []peer.ID, msg []byte) {
 		c.logger.Debug().Msgf("the peer list is empty")
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), TimeoutBroadcast)
-	defer cancel()
-	peerChan, err := c.routingDiscovery.FindPeers(ctx, c.rendezvous)
-	if nil != err {
-		c.logger.Error().Err(err).Msg("fail to find any peers")
-		return
+	// now, we find the peer multiaddr according to peer ID.
+	// we try with the cached one firstly, if we have some unknown nodes
+	// we call Findpeers to update our cache. We assume during the keygen/keysign
+	// todo we need to clean up the cache when we finish
+	sendersAddr, notInList := c.getPeersFromCache(peers)
+	if len(notInList) != 0 {
+		err := c.updateCachedP2PAddr(notInList)
+		if err != nil{
+			c.logger.Error().Err(err).Msgf("fail in broadcast to peer")
+		}
+		sendersAddr, notInList = c.getPeersFromCache(peers)
+		if len(notInList) != 0 {
+			c.logger.Error().Msgf("error in broadcast as we cannot find the peers %v\n", notInList)
+			return
+		}
 	}
-	for {
-		select {
-		case <-c.stopChan:
-			return // we need to stop the server
-		case ai, more := <-peerChan:
-			if !more {
-				return
-			}
-			if c.shouldWeWriteToPeer(ai, peers) {
-				if err := c.writeToStream(ai, msg); nil != err {
-					c.logger.Error().Err(err).Msg("fail to write to stream")
-				}
-			}
+	for _, ai := range sendersAddr {
+		if err := c.writeToStream(ai, msg); nil != err {
+			c.logger.Error().Err(err).Msg("fail to write to stream")
+		}
+	}
+
+}
+
+func (c *Communication) SaveAddrToCache(ai peer.AddrInfo, peers []peer.ID) {
+	for _, p := range peers {
+		if ai.ID.String() == p.String() {
+			c.cachedP2PAddr[p] = ai
 		}
 	}
 }
@@ -208,7 +252,6 @@ func (c *Communication) readFromStream(stream network.Stream) {
 			n, err := stream.Read(length)
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					c.logger.Error().Err(err).Msg("the stream cannot be read")
 					return
 				}
 				c.logger.Error().Err(err).Msgf("fail to read from header from stream,peerID: %s", peerID)
