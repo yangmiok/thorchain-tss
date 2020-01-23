@@ -228,7 +228,7 @@ func (t *TssCommon) findBlamePeers(localCacheItem *LocalCacheItem, dataOwnerP2PI
 	return blamePeers, nil
 }
 
-func (t *TssCommon) getHashCheckBlamePeers(localCacheItem *LocalCacheItem, err error) ([]string, error) {
+func (t *TssCommon) getHashCheckBlamePeers(localCacheItem *LocalCacheItem, hashCheckErr error) ([]string, error) {
 	// here we do the blame on the error on hash inconsistency
 	// if we find the msg owner try to send the hash to us, we blame him and ignore the blame of the rest
 	// of the other nodes, cause others may also be the victims.
@@ -240,12 +240,12 @@ func (t *TssCommon) getHashCheckBlamePeers(localCacheItem *LocalCacheItem, err e
 		t.logger.Warn().Msgf("error in find the data Owner P2PID\n")
 		return nil, errors.New("error in find the data Owner P2PID")
 	}
-	switch err {
+	switch hashCheckErr {
 	case ErrHashFromOwner:
 		blameP2PIDs = append(blameP2PIDs, dataOwnerP2PID.String())
-		return blameP2PIDs, err
+		return blameP2PIDs, nil
 	case ErrHashFromPeer:
-		blameP2PIDs, err = t.findBlamePeers(localCacheItem, dataOwnerP2PID.String())
+		blameP2PIDs, err := t.findBlamePeers(localCacheItem, dataOwnerP2PID.String())
 		return blameP2PIDs, err
 	default:
 		return nil, errors.New("unknown case")

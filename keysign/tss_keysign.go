@@ -162,10 +162,12 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 			tssCommonStruct := tKeySign.GetTssCommonStruct()
 			localCachedItems := tssCommonStruct.TryGetAllLocalCached()
 			blamePeers, err := tssCommonStruct.TssTimeoutBlame(localCachedItems)
-			tssCommonStruct.BlamePeers = append(tssCommonStruct.BlamePeers, blamePeers[:]...)
 			if err != nil {
 				tKeySign.logger.Error().Err(err).Msg("fail to get the blamed peers")
+				tssCommonStruct.FailReason = common.BlameTssTimeout
+				return nil, fmt.Errorf("fail to get the blamed peers %w", common.ErrTssTimeOut)
 			}
+			tssCommonStruct.BlamePeers = append(tssCommonStruct.BlamePeers, blamePeers[:]...)
 			tssCommonStruct.FailReason = common.BlameTssTimeout
 			return nil, common.ErrTssTimeOut
 		case msg := <-outCh:
@@ -184,11 +186,12 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 			var wrappedMsg p2p.WrappedMessage
 			if err := json.Unmarshal(m.Payload, &wrappedMsg); nil != err {
 				tKeySign.logger.Error().Err(err).Msg("fail to unmarshal wrapped message bytes")
-				continue
+				return nil,err
 			}
 			err := tKeySign.tssCommonStruct.ProcessOneMessage(&wrappedMsg, m.PeerID.String())
 			if err != nil {
 				tKeySign.logger.Error().Err(err).Msg("failed to process the received message")
+				return nil,err
 			}
 		case msg := <-endCh:
 			tKeySign.logger.Debug().Msg("we have done the key sign")
