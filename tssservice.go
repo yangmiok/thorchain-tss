@@ -313,7 +313,10 @@ func (t *TssServer) keygen(w http.ResponseWriter, r *http.Request) {
 	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeyGenMsg)
 	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeyGenVerMsg)
 	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeyGenSync)
-
+	defer func() {
+		peers := keygenInstance.GetTssCommonStruct().P2PPeers
+		t.p2pCommunication.DeletePeers(peers)
+	}()
 	// the statistic of keygen only care about Tss it self, even if the following http response aborts,
 	// it still counted as a successful keygen as the Tss model runs successfully.
 	k, err := keygenInstance.GenerateNewKey(keygenReq)
@@ -374,17 +377,20 @@ func (t *TssServer) keySign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	keysignInstance := keysign.NewTssKeySign(t.homeBase, t.p2pCommunication.GetLocalPeerID(), t.conf, t.priKey, t.p2pCommunication.BroadcastMsgChan, &t.stopChan, &t.Status.CurrKeySign)
+	keySignInstance := keysign.NewTssKeySign(t.homeBase, t.p2pCommunication.GetLocalPeerID(), t.conf, t.priKey, t.p2pCommunication.BroadcastMsgChan, &t.stopChan, &t.Status.CurrKeySign)
 
-	keygenMsgChannel, keygenSyncChannel := keysignInstance.GetTssKeySignChannels()
+	keygenMsgChannel, keygenSyncChannel := keySignInstance.GetTssKeySignChannels()
 	t.p2pCommunication.SetSubscribe(p2p.TSSKeySignMsg, keygenMsgChannel)
 	t.p2pCommunication.SetSubscribe(p2p.TSSKeySignVerMsg, keygenMsgChannel)
 	t.p2pCommunication.SetSubscribe(p2p.TSSKeySignSync, keygenSyncChannel)
 	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeySignMsg)
 	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeySignVerMsg)
 	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeySignSync)
-
-	signatureData, err := keysignInstance.SignMessage(keySignReq)
+	defer func() {
+		peers := keySignInstance.GetTssCommonStruct().P2PPeers
+		t.p2pCommunication.DeletePeers(peers)
+	}()
+	signatureData, err := keySignInstance.SignMessage(keySignReq)
 	// the statistic of keygen only care about Tss it self, even if the following http response aborts,
 	// it still counted as a successful keygen as the Tss model runs successfully.
 	if err != nil {
@@ -397,10 +403,10 @@ func (t *TssServer) keySign(w http.ResponseWriter, r *http.Request) {
 	}
 	// this indicates we are not in this round keysign
 	if signatureData == nil && err == nil {
-		keysignInstance.WriteKeySignResult(w, "", "", common.NA)
+		keySignInstance.WriteKeySignResult(w, "", "", common.NA)
 		return
 	}
-	keysignInstance.WriteKeySignResult(w, base64.StdEncoding.EncodeToString(signatureData.R), base64.StdEncoding.EncodeToString(signatureData.S), keySignFlag)
+	keySignInstance.WriteKeySignResult(w, base64.StdEncoding.EncodeToString(signatureData.R), base64.StdEncoding.EncodeToString(signatureData.S), keySignFlag)
 }
 
 func (t *TssServer) getP2pID(w http.ResponseWriter, _ *http.Request) {
