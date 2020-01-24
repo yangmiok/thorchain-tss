@@ -286,7 +286,11 @@ func (t *TssServer) ping(w http.ResponseWriter, _ *http.Request) {
 
 func (t *TssServer) keygen(w http.ResponseWriter, r *http.Request) {
 	t.tssKeyGenLocker.Lock()
-	defer t.tssKeyGenLocker.Unlock()
+	timeNow:= time.Now()
+	defer func() {
+		t.tssKeyGenLocker.Unlock()
+		t.logger.Info().Msgf(">>>>>>>>>>>keygen %s\n", time.Since(timeNow))
+	}()
 	status := common.Success
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -357,7 +361,11 @@ func (t *TssServer) keygen(w http.ResponseWriter, r *http.Request) {
 
 func (t *TssServer) keySign(w http.ResponseWriter, r *http.Request) {
 	t.tssKeySignLocker.Lock()
-	defer t.tssKeySignLocker.Unlock()
+	timeNow := time.Now()
+	defer func() {
+		defer t.tssKeySignLocker.Unlock()
+		t.logger.Info().Msgf(">>>>>>>keysign time is %s\n", time.Since(timeNow))
+	}()
 	var keySignReq keysign.KeySignReq
 	keySignFlag := common.Success
 	if r.Method != http.MethodPost {
