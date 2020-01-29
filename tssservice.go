@@ -283,8 +283,10 @@ func (t *TssServer) ping(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (t *TssServer) keygen(w http.ResponseWriter, r *http.Request) {
+	t.logger.Debug().Msg("starting keygen process...")
 	t.tssKeyGenLocker.Lock()
 	defer t.tssKeyGenLocker.Unlock()
+	t.logger.Debug().Msg("starting keygen process2...")
 	status := common.Success
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
