@@ -19,12 +19,12 @@ import (
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 )
 
-func Contains(s []*btss.PartyID, e *btss.PartyID) bool {
-	if e == nil {
+func Contains(s []string, e string) bool {
+	if e == "" {
 		return false
 	}
 	for _, a := range s {
-		if *a == *e {
+		if a == e {
 			return true
 		}
 	}
@@ -190,6 +190,19 @@ func (t *TssCommon) GetBlamePubKeysLists(peer []string) ([]string, []string, err
 	}
 
 	return inList, notInlist, err
+}
+
+//GetPartiesIDFromPeerID returns the PartyID of the given p2p peers
+func (t *TssCommon) GetPartiesIDFromPeerID(peer []string, parties map[string]*btss.PartyID, partyIDToP2PID map[string]peer.ID) []*btss.PartyID {
+	var partiesID []*btss.PartyID
+	for id, el := range partyIDToP2PID {
+		for _, each := range peer {
+			if el.String() == each {
+				partiesID = append(partiesID, parties[id])
+			}
+		}
+	}
+	return partiesID
 }
 
 // TssTimeoutBlame handles the blame caused by the nodesync error

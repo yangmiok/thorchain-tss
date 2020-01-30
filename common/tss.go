@@ -90,7 +90,7 @@ func GetPriKeyRawBytes(priKey cryptokey.PrivKey) ([]byte, error) {
 	return keyBytesArray[:], nil
 }
 
-func GetParties(keys []string, localPartyKey string, keygen bool) ([]*btss.PartyID, *btss.PartyID, error) {
+func GetParties(keys []string, localPartyKey string) ([]*btss.PartyID, *btss.PartyID, error) {
 	var localPartyID *btss.PartyID
 	var unSortedPartiesID []*btss.PartyID
 	sort.Strings(keys)
@@ -116,15 +116,6 @@ func GetParties(keys []string, localPartyKey string, keygen bool) ([]*btss.Party
 	}
 
 	partiesID := btss.SortPartyIDs(unSortedPartiesID)
-	// select the node on the "partiesID" rather than on the "keys" as the secret shares are sorted on the "index",
-	// not on the node ID.
-	if !keygen {
-		threshold, err := GetThreshold(len(keys))
-		if nil != err {
-			return nil, nil, err
-		}
-		partiesID = partiesID[:threshold+1]
-	}
 
 	return partiesID, localPartyID, nil
 }

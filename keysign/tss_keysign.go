@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/binance-chain/tss-lib/ecdsa/signing"
 	btss "github.com/binance-chain/tss-lib/tss"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	cryptokey "github.com/tendermint/tendermint/crypto"
@@ -51,6 +53,17 @@ func (tKeySign *TssKeySign) GetTssCommonStruct() *common.TssCommon {
 	return tKeySign.tssCommonStruct
 }
 
+func (tKeySign *TssKeySign) getSigningPeers(peers []string, threshold int) ([]string, bool) {
+	var candidates []string
+	localPeer := tKeySign.GetTssCommonStruct().GetLocalPeerID()
+	candidates = append(peers, localPeer)
+	sort.Strings(candidates)
+	if common.Contains(candidates[:threshold+1], localPeer) {
+		return candidates[:threshold+1], true
+	}
+	return nil, false
+}
+
 // signMessage
 func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData, error) {
 	if len(req.PoolPubKey) == 0 {
@@ -73,46 +86,23 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 		return nil, err
 	}
 	tKeySign.logger.Debug().Msgf("keysign threshold: %d", threshold)
-	partiesID, localPartyID, err := common.GetParties(storedKeyGenLocalStateItem.ParticipantKeys, storedKeyGenLocalStateItem.LocalPartyKey, false)
-	tKeySign.localParty = localPartyID
+	partiesIDFromKeyFile, localPartyID, err := common.GetParties(storedKeyGenLocalStateItem.ParticipantKeys, storedKeyGenLocalStateItem.LocalPartyKey)
 	if nil != err {
 		return nil, fmt.Errorf("fail to form key sign party: %w", err)
 	}
-	if !common.Contains(partiesID, localPartyID) {
-		tKeySign.logger.Info().Msgf("we are not in this rounds key sign")
-		return nil, nil
-	}
-
-	localKeyData, partiesID := common.ProcessStateFile(storedKeyGenLocalStateItem, partiesID)
-	// Set up the parameters
-	// Note: The `id` and `moniker` fields are for convenience to allow you to easily track participants.
-	// The `id` should be a unique string representing this party in the network and `moniker` can be anything (even left blank).
-	// The `uniqueKey` is a unique identifying key for this peer (such as its p2p public key) as a big.Int.
-	tKeySign.logger.Debug().Msgf("local party: %+v", localPartyID)
-	ctx := btss.NewPeerContext(partiesID)
-	params := btss.NewParameters(ctx, localPartyID, len(partiesID), threshold)
-	outCh := make(chan btss.Message, len(partiesID))
-	endCh := make(chan signing.SignatureData, len(partiesID))
-	errCh := make(chan struct{})
-	m, err := common.MsgToHashInt(msgToSign)
-	if nil != err {
-		return nil, fmt.Errorf("fail to convert msg to hash int: %w", err)
-	}
-	keySignParty := signing.NewLocalParty(m, params, localKeyData, outCh, endCh)
-	partyIDMap := common.SetupPartyIDMap(partiesID)
-	err = common.SetupIDMaps(partyIDMap, tKeySign.tssCommonStruct.PartyIDtoP2PID)
+	partyIDMapFromKeyFile := common.SetupPartyIDMap(partiesIDFromKeyFile)
+	tempPartyIDtoP2PID := make(map[string]peer.ID)
+	err = common.SetupIDMaps(partyIDMapFromKeyFile, tempPartyIDtoP2PID)
 	if nil != err {
 		tKeySign.logger.Error().Msgf("error in creating mapping between partyID and P2P ID")
 		return nil, err
 	}
-	tKeySign.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
-		Party:      keySignParty,
-		PartyIDMap: partyIDMap,
-	})
 
-	tKeySign.tssCommonStruct.P2PPeers = common.GetPeersID(tKeySign.tssCommonStruct.PartyIDtoP2PID, tKeySign.tssCommonStruct.GetLocalPeerID())
+	// now we do the node sync, we have to wait for the timeout to allow all the nodes that want to be involved in the
+	// keysign to express their interest.
+	tKeySign.tssCommonStruct.P2PPeers = common.GetPeersID(tempPartyIDtoP2PID, tKeySign.tssCommonStruct.GetLocalPeerID())
 	standbyPeers, err := tKeySign.tssCommonStruct.NodeSync(tKeySign.syncMsg, p2p.TSSKeySignSync)
-	if err != nil {
+	if err != nil && len(standbyPeers) < threshold {
 		tKeySign.logger.Error().Err(err).Msg("node sync error")
 		if err == common.ErrNodeSync {
 			tKeySign.logger.Error().Err(err).Msgf("the nodes online are +%v", standbyPeers)
@@ -125,6 +115,44 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 		}
 		return nil, err
 	}
+
+	signers, isMember := tKeySign.getSigningPeers(standbyPeers, threshold)
+	if !isMember {
+		return nil, nil
+	}
+
+	partiesIDInSigning := tKeySign.tssCommonStruct.GetPartiesIDFromPeerID(signers[:], partyIDMapFromKeyFile, tempPartyIDtoP2PID)
+	partyIDMap := common.SetupPartyIDMap(partiesIDInSigning)
+	err = common.SetupIDMaps(partyIDMap, tKeySign.tssCommonStruct.PartyIDtoP2PID)
+	if nil != err {
+		tKeySign.logger.Error().Msgf("error in creating mapping between partyID and P2P ID")
+		return nil, err
+	}
+
+	//now we confirm and update the signing peers
+	tKeySign.tssCommonStruct.P2PPeers = common.GetPeersID(tKeySign.tssCommonStruct.PartyIDtoP2PID, tKeySign.tssCommonStruct.GetLocalPeerID())
+	localKeyData, partiesIDInSigning := common.ProcessStateFile(storedKeyGenLocalStateItem, partiesIDInSigning)
+	// Set up the parameters
+	// Note: The `id` and `moniker` fields are for convenience to allow you to easily track participants.
+	// The `id` should be a unique string representing this party in the network and `moniker` can be anything (even left blank).
+	// The `uniqueKey` is a unique identifying key for this peer (such as its p2p public key) as a big.Int.
+	tKeySign.logger.Debug().Msgf("local party: %+v", localPartyID)
+	tKeySign.localParty = localPartyID
+	ctx := btss.NewPeerContext(partiesIDInSigning)
+	params := btss.NewParameters(ctx, localPartyID, len(partiesIDInSigning), threshold)
+	outCh := make(chan btss.Message, len(partiesIDInSigning))
+	endCh := make(chan signing.SignatureData, len(partiesIDInSigning))
+	errCh := make(chan struct{})
+	m, err := common.MsgToHashInt(msgToSign)
+	if nil != err {
+		return nil, fmt.Errorf("fail to convert msg to hash int: %w", err)
+	}
+	keySignParty := signing.NewLocalParty(m, params, localKeyData, outCh, endCh)
+	tKeySign.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
+		Party:      keySignParty,
+		PartyIDMap: partyIDMap,
+	})
+
 	//start the key sign
 	go func() {
 		if err := keySignParty.Start(); nil != err {

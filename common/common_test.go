@@ -86,25 +86,16 @@ func (t *TssTestSuite) TestMsgToHashInt(c *C) {
 }
 
 func (t *TssTestSuite) TestContains(c *C) {
-	t1 := btss.PartyID{
-		Index: 1,
-	}
-	ret := Contains(nil, &t1)
+	ret := Contains(nil, "test")
 	c.Assert(ret, Equals, false)
 
-	t2 := btss.PartyID{
-		Index: 2,
-	}
-	t3 := btss.PartyID{
-		Index: 3,
-	}
-	testParties := []*btss.PartyID{&t2, &t3}
-	ret = Contains(testParties, &t1)
+	testParties := []string{"ab", "cd"}
+	ret = Contains(testParties, "lab")
 	c.Assert(ret, Equals, false)
-	testParties = append(testParties, &t1)
-	ret = Contains(testParties, &t1)
+	testParties = append(testParties, "ab")
+	ret = Contains(testParties, "ab")
 	c.Assert(ret, Equals, true)
-	ret = Contains(testParties, nil)
+	ret = Contains(testParties, "")
 	c.Assert(ret, Equals, false)
 }
 
@@ -179,7 +170,7 @@ func (t *TssTestSuite) TestTssProcessOutCh(c *C) {
 	conf := TssConfig{}
 	localTestPubKeys := make([]string, len(testPubKeys))
 	copy(localTestPubKeys, testPubKeys[:])
-	partiesID, localPartyID, err := GetParties(localTestPubKeys, testPubKeys[0], true)
+	partiesID, localPartyID, err := GetParties(localTestPubKeys, testPubKeys[0])
 	c.Assert(err, IsNil)
 	messageRouting := btss.MessageRouting{
 		From:                    localPartyID,
@@ -278,7 +269,7 @@ func setupProcessVerMsgEnv(c *C, keyPool []string, partyNum int) (*TssCommon, []
 	localTestPubKeys := make([]string, partyNum)
 	copy(localTestPubKeys, keyPool[:partyNum])
 	//for the test, we choose the first pubic key as the test instance public key
-	partiesID, localPartyID, err := GetParties(localTestPubKeys, keyPool[0], true)
+	partiesID, localPartyID, err := GetParties(localTestPubKeys, keyPool[0])
 	c.Assert(err, IsNil)
 	partyIDMap := SetupPartyIDMap(partiesID)
 	SetupIDMaps(partyIDMap, tssCommonStruct.PartyIDtoP2PID)
