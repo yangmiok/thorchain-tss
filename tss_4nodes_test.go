@@ -146,7 +146,7 @@ func sendTestRequest(c *C, url string, request []byte) []byte {
 	return body
 }
 
-func testKeySign(c *C, poolPubKey string, testParties KeySignTestParties) {
+func testKeySign(c *C, poolPubKey string, testParties KeySignTestParties, signersTotal int) {
 	var sm sync.Map
 	msg := base64.StdEncoding.EncodeToString([]byte("hello"))
 	keySignReq := keysign.KeySignReq{
@@ -170,6 +170,18 @@ func testKeySign(c *C, poolPubKey string, testParties KeySignTestParties) {
 	}
 	requestGroup.Wait()
 
+	threshold, err := common.GetThreshold(signersTotal)
+	c.Assert(err, IsNil)
+	if len(testParties.signers) < threshold+1 {
+		for _, i := range testParties.recvSigners {
+			el, ok := sm.Load(i)
+			signature := el.(*keysign.KeySignResp)
+			c.Assert(ok, Equals, true)
+			c.Assert(signature.Blame.FailReason, Equals, "not enough signers")
+		}
+		return
+	}
+
 	// signers who should quit the keysign
 	for _, i := range testParties.NoRecvSigners {
 		el, ok := sm.Load(i)
@@ -190,8 +202,6 @@ func testKeySign(c *C, poolPubKey string, testParties KeySignTestParties) {
 		c.Assert(signature.S, HasLen, 44)
 		c.Assert(signature.S, Equals, signature2.S)
 		c.Assert(signature.R, Equals, signature2.R)
-	}
-	for i := 1; i < partyNum-1; i++ {
 	}
 }
 
@@ -244,16 +254,22 @@ func (t *TssTestSuite) TestHttp4NodesTss(c *C) {
 		recvSigners:   []int{0, 2, 3},
 		NoRecvSigners: []int{1},
 	}
-	testCase3 := KeySignTestParties{
-		signers:       []int{0, 1, 2},
-		recvSigners:   []int{0, 1, 2},
-		NoRecvSigners: []int{},
-	}
 	testCase2 := KeySignTestParties{
 		signers:       []int{0, 1, 3},
 		recvSigners:   []int{0, 1, 3},
 		NoRecvSigners: []int{},
 	}
+	testCase3 := KeySignTestParties{
+		signers:       []int{0, 1, 2},
+		recvSigners:   []int{0, 1, 2},
+		NoRecvSigners: []int{},
+	}
+	testCase4 := KeySignTestParties{
+		signers:       []int{0, 1},
+		recvSigners:   []int{0, 1},
+		NoRecvSigners: []int{},
+	}
+
 	//test key gen.
 	poolPubKey := testKeyGen(c, partyNum)
 	// we test keygen and key sign running in parallel
@@ -262,7 +278,7 @@ func (t *TssTestSuite) TestHttp4NodesTss(c *C) {
 	go func() {
 		defer wgGenSign.Done()
 		//test key sign.
-		testKeySign(c, poolPubKey, testCase1)
+		testKeySign(c, poolPubKey, testCase1, partyNum)
 	}()
 	wgGenSign.Add(1)
 	go func() {
@@ -277,9 +293,11 @@ func (t *TssTestSuite) TestHttp4NodesTss(c *C) {
 	// of interests of the nodes who want to be the signers.
 
 	//we ask 0,1,2 signers to sign
-	testKeySign(c, poolPubKey, testCase2)
+	testKeySign(c, poolPubKey, testCase2, partyNum)
 	//we ask 0,1,3 signers to sign
-	testKeySign(c, poolPubKey, testCase3)
+	testKeySign(c, poolPubKey, testCase3, partyNum)
+	// we do not have enough signers for this round
+	testKeySign(c, poolPubKey, testCase4, partyNum)
 
 }
 

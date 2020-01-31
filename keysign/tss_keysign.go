@@ -105,13 +105,8 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 	if err != nil && len(standbyPeers) < threshold {
 		tKeySign.logger.Error().Err(err).Msg("node sync error")
 		if err == common.ErrNodeSync {
-			tKeySign.logger.Error().Err(err).Msgf("the nodes online are +%v", standbyPeers)
-			_, blamePubKeys, err := tKeySign.tssCommonStruct.GetBlamePubKeysLists(standbyPeers)
-			if err != nil {
-				tKeySign.logger.Error().Err(err).Msg("error in get blame node pubkey")
-				return nil, err
-			}
-			tKeySign.tssCommonStruct.BlamePeers.SetBlame(common.BlameNodeSyncCheck, blamePubKeys)
+			tKeySign.logger.Info().Msgf("Not Enough signers for the keysign, the nodes online are +%v", standbyPeers)
+			tKeySign.tssCommonStruct.BlamePeers.SetBlame("not enough signers", nil)
 		}
 		return nil, err
 	}
