@@ -154,10 +154,6 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 			tKeySign.logger.Error().Err(err).Msg("fail to start key sign party")
 			close(errCh)
 		}
-		tKeySign.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
-			Party:      keySignParty,
-			PartyIDMap: partyIDMap,
-		})
 		tKeySign.logger.Debug().Msg("local party is ready")
 	}()
 
