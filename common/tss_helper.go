@@ -196,12 +196,10 @@ func (t *TssCommon) GetBlamePubKeysLists(peer []string) ([]string, []string, err
 func (t *TssCommon) GetPartiesIDFromPeerID(peer []string, parties map[string]*btss.PartyID, partyIDToP2PID map[string]peer.ID) []*btss.PartyID {
 	var partiesID []*btss.PartyID
 	for id, el := range partyIDToP2PID {
-		for _, each := range peer {
-			if el.String() == each {
+		if Contains(peer, el.String()){
 				partiesID = append(partiesID, parties[id])
 			}
 		}
-	}
 	return partiesID
 }
 

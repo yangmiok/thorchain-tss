@@ -104,8 +104,8 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 	standbyPeers, err := tKeySign.tssCommonStruct.NodeSync(tKeySign.syncMsg, p2p.TSSKeySignSync)
 	if err != nil && len(standbyPeers) < threshold {
 		tKeySign.logger.Error().Err(err).Msg("node sync error")
-		if err == common.ErrNodeSync {
-			tKeySign.logger.Info().Msgf("Not Enough signers for the keysign, the nodes online are +%v", standbyPeers)
+		if errors.Is(err, common.ErrNodeSync) {
+			tKeySign.logger.Error().Err(err).Msgf("Not Enough signers for the keysign, the nodes online are +%v", standbyPeers)
 			tKeySign.tssCommonStruct.BlamePeers.SetBlame("not enough signers", nil)
 		}
 		return nil, err
@@ -113,10 +113,11 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 
 	signers, isMember := tKeySign.getSigningPeers(standbyPeers, threshold)
 	if !isMember {
+		tKeySign.logger.Debug().Msg("not in this round signing")
 		return nil, nil
 	}
 
-	partiesIDInSigning := tKeySign.tssCommonStruct.GetPartiesIDFromPeerID(signers[:], partyIDMapFromKeyFile, tempPartyIDtoP2PID)
+	partiesIDInSigning := tKeySign.tssCommonStruct.GetPartiesIDFromPeerID(signers, partyIDMapFromKeyFile, tempPartyIDtoP2PID)
 	partyIDMap := common.SetupPartyIDMap(partiesIDInSigning)
 	err = common.SetupIDMaps(partyIDMap, tKeySign.tssCommonStruct.PartyIDtoP2PID)
 	if nil != err {
