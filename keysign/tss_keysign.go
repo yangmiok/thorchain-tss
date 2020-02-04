@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/binance-chain/tss-lib/ecdsa/signing"
@@ -28,7 +30,7 @@ type TssKeySign struct {
 	stopChan        *chan struct{} // channel to indicate whether we should stop
 	homeBase        string
 	syncMsg         chan *p2p.Message
-	localParty      *btss.PartyID
+	localParty      []*btss.PartyID
 	keySignCurrent  *string
 }
 
@@ -40,7 +42,7 @@ func NewTssKeySign(homeBase, localP2PID string, conf common.TssConfig, privKey c
 		stopChan:        stopChan,
 		homeBase:        homeBase,
 		syncMsg:         make(chan *p2p.Message),
-		localParty:      nil,
+		localParty:      make([]*btss.PartyID, 0),
 		keySignCurrent:  keySignCurrent,
 	}
 }
@@ -77,9 +79,18 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 	if nil != err {
 		return nil, fmt.Errorf("fail to read local state file: %w", err)
 	}
-	msgToSign, err := base64.StdEncoding.DecodeString(req.Message)
-	if nil != err {
-		return nil, fmt.Errorf("fail to decode message(%s): %w", req.Message, err)
+	var msgsBigInt []*big.Int
+	fmt.Printf(">>>>>1111111111111111111>>>+%v\n", req.Messages)
+	for _, m := range req.Messages {
+		msgToSign, err := base64.StdEncoding.DecodeString(m)
+		if nil != err {
+			return nil, fmt.Errorf("fail to decode message(%s): %w", m, err)
+		}
+		m, err := common.MsgToHashInt(msgToSign)
+		if nil != err {
+			return nil, fmt.Errorf("fail to convert msg to hash int: %w", err)
+		}
+		msgsBigInt = append(msgsBigInt, m)
 	}
 	threshold, err := common.GetThreshold(len(storedKeyGenLocalStateItem.ParticipantKeys))
 	if nil != err {
@@ -113,6 +124,7 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 
 	signers, isMember := tKeySign.getSigningPeers(standbyPeers, threshold)
 	if !isMember {
+		fmt.Println("we are not in this round !!!!!!!!!!!!!!!!!!!!")
 		return nil, nil
 	}
 
@@ -128,39 +140,70 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 	tKeySign.tssCommonStruct.P2PPeers = common.GetPeersID(tKeySign.tssCommonStruct.PartyIDtoP2PID, tKeySign.tssCommonStruct.GetLocalPeerID())
 	localKeyData, partiesIDInSigning := common.ProcessStateFile(storedKeyGenLocalStateItem, partiesIDInSigning)
 	// Set up the parameters
-	// Note: The `id` and `moniker` fields are for convenience to allow you to easily track participants.
+// Note: The `id` and `moniker` fields are for convenience to allow you to easily track participants.
 	// The `id` should be a unique string representing this party in the network and `moniker` can be anything (even left blank).
 	// The `uniqueKey` is a unique identifying key for this peer (such as its p2p public key) as a big.Int.
 	tKeySign.logger.Debug().Msgf("local party: %+v", localPartyID)
-	tKeySign.localParty = localPartyID
-	ctx := btss.NewPeerContext(partiesIDInSigning)
-	params := btss.NewParameters(ctx, localPartyID, len(partiesIDInSigning), threshold)
+
 	outCh := make(chan btss.Message, len(partiesIDInSigning))
 	endCh := make(chan signing.SignatureData, len(partiesIDInSigning))
 	errCh := make(chan struct{})
-	m, err := common.MsgToHashInt(msgToSign)
-	if nil != err {
-		return nil, fmt.Errorf("fail to convert msg to hash int: %w", err)
-	}
-	keySignParty := signing.NewLocalParty(m, params, localKeyData, outCh, endCh)
+
+	keySignPartyMap := make(map[string]*btss.Party, 0)
+	//for i, el := range msgsBigInt {
+	//	moiker:= el.String() + ":" + strconv.Itoa(i)
+	//	ctx := btss.NewPeerContext(partiesIDInSigning)
+	//	eachLocalPartyID := btss.NewPartyID(localPartyID.GetId(), moiker, localPartyID.KeyInt())
+	//	//eachLocalPartyID := amino.DeepCopy(localPartyID).(*btss.PartyID)
+	//	//eachLocalPartyID.Moniker = index
+	//	eachLocalPartyID.Index = localPartyID.Index
+	//	tKeySign.localParty = append(tKeySign.localParty,eachLocalPartyID)
+	//	params := btss.NewParameters(ctx, eachLocalPartyID, len(partiesIDInSigning), threshold)
+	//	keySignParty := signing.NewLocalParty(el, params, localKeyData, outCh, endCh)
+	//	keySignPartyMap[moiker] = &keySignParty
+	//}
+	el := msgsBigInt[0]
+	moiker:= el.String() + ":" + strconv.Itoa(0)
+	ctx := btss.NewPeerContext(partiesIDInSigning)
+	eachLocalPartyID := btss.NewPartyID(localPartyID.GetId(), moiker, localPartyID.KeyInt())
+	//eachLocalPartyID := amino.DeepCopy(localPartyID).(*btss.PartyID)
+	//eachLocalPartyID.Moniker = index
+	eachLocalPartyID.Index = localPartyID.Index
+	tKeySign.localParty = append(tKeySign.localParty,eachLocalPartyID)
+	params := btss.NewParameters(ctx, eachLocalPartyID, len(partiesIDInSigning), threshold)
+	keySignParty := signing.NewLocalParty(el, params, localKeyData, outCh, endCh)
+	keySignPartyMap[moiker] = &keySignParty
+
+
+	el = msgsBigInt[1]
+	moiker= el.String() + ":" + strconv.Itoa(1)
+	ctx = btss.NewPeerContext(partiesIDInSigning)
+	eachLocalPartyID = btss.NewPartyID(localPartyID.GetId(), moiker, localPartyID.KeyInt())
+	//eachLocalPartyID := amino.DeepCopy(localPartyID).(*btss.PartyID)
+	//eachLocalPartyID.Moniker = index
+	localKeyData, partiesIDInSigning := common.ProcessStateFile(storedKeyGenLocalStateItem, partiesIDInSigning)
+	eachLocalPartyID.Index = localPartyID.Index
+	tKeySign.localParty = append(tKeySign.localParty,eachLocalPartyID)
+	params = btss.NewParameters(ctx, eachLocalPartyID, len(partiesIDInSigning), threshold)
+	keySignParty = signing.NewLocalParty(el, params, localKeyData, outCh, endCh)
+	keySignPartyMap[moiker] = &keySignParty
+
 	tKeySign.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
-		Party:      keySignParty,
+		PartyMap:   keySignPartyMap,
 		PartyIDMap: partyIDMap,
 	})
 
 	//start the key sign
-	go func() {
-		if err := keySignParty.Start(); nil != err {
-			tKeySign.logger.Error().Err(err).Msg("fail to start key sign party")
-			close(errCh)
-		}
-		tKeySign.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
-			Party:      keySignParty,
-			PartyIDMap: partyIDMap,
-		})
-		tKeySign.logger.Debug().Msg("local party is ready")
-	}()
-
+	for _, eachParty := range keySignPartyMap {
+		runparty := *eachParty
+		go func() {
+			if err := runparty.Start(); nil != err {
+				tKeySign.logger.Error().Err(err).Msg("fail to start key sign party")
+				//close(errCh)
+			}
+			tKeySign.logger.Info().Msg("local party is ready")
+		}()
+	}
 	result, err := tKeySign.processKeySign(errCh, outCh, endCh)
 	if nil != err {
 		return nil, fmt.Errorf("fail to process key sign: %w", err)
@@ -194,7 +237,6 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blamePeers)
 			return nil, common.ErrTssTimeOut
 		case msg := <-outCh:
-			tKeySign.logger.Debug().Msgf(">>>>>>>>>>key sign msg: %s", msg.String())
 			// for the sake of performance, we do not lock the status update
 			// we report a rough status of current round
 			*tKeySign.keySignCurrent = msg.Type()
@@ -232,6 +274,7 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 
 		case msg := <-endCh:
 			tKeySign.logger.Debug().Msg("we have done the key sign")
+			fmt.Printf(">>>>>>>>>>>>>>>>>>%s\n", msg.String())
 			return &msg, nil
 		}
 	}
@@ -241,7 +284,7 @@ func (tKeySign *TssKeySign) WriteKeySignResult(w http.ResponseWriter, R, S strin
 
 	//blame := common.NewBlame()
 	//blame.SetBlame(tKeySign.tssCommonStruct.Blame.FailReason, tKeySign.tssCommonStruct.Blame.BlameNodes)
-	signResp := KeySignResp{
+	signResp := Signature{
 		R:      R,
 		S:      S,
 		Status: status,

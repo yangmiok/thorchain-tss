@@ -6,12 +6,17 @@ import (
 
 // KeySignReq request to sign a message
 type KeySignReq struct {
-	PoolPubKey string `json:"pool_pub_key"` // pub key of the pool that we would like to send this message from
-	Message    string `json:"message"`      // base64 encoded message to be signed
+	PoolPubKey string   `json:"pool_pub_key"` // pub key of the pool that we would like to send this message from
+	Messages   []string `json:"messages"`     // base64 encoded message to be signed
 }
 
-// KeySignResp key sign response
-type KeySignResp struct {
+// KeySignResp key sign response with batch signatures
+type KeySignRespBatch struct {
+	KeySignResp []Signature
+}
+
+// Signature for each keysign request message
+type Signature struct {
 	R      string        `json:"r"`
 	S      string        `json:"s"`
 	Status common.Status `json:"status"`

@@ -220,6 +220,7 @@ func (c *Communication) readFromStream(stream network.Stream) {
 			l := binary.LittleEndian.Uint32(length)
 			// we are transferring protobuf messages , how big can that be , if it is larger then MaxPayload , then definitely no no...
 			if l > MaxPayload {
+				fmt.Println("TTTTTTTTTTTTTTTTTTLLLLLLLLLLLLLLLLAAAAAAAAAAAARRRRRRRRRRRRRR")
 				c.logger.Warn().Msgf("peer:%s trying to send %d bytes payload", peerID, l)
 				return
 			}
@@ -241,7 +242,6 @@ func (c *Communication) readFromStream(stream network.Stream) {
 				c.logger.Error().Err(err).Msg("fail to unmarshal wrapped message bytes")
 				continue
 			}
-			c.logger.Debug().Msgf(">>>>>>>%v", wrappedMsg)
 			channel, ok := c.subscribers[wrappedMsg.MessageType]
 			if !ok {
 				c.logger.Info().Msgf("no subscriber %s found for this message", wrappedMsg.MessageType.String())
@@ -390,7 +390,7 @@ func (c *Communication) ProcessBroadcast() {
 				c.logger.Error().Err(err).Msg("fail to marshal a wrapped message to json bytes")
 				continue
 			}
-			c.logger.Debug().Msgf("broadcast message %s to %+v", msg.WrappedMessage, msg.PeersID)
+			//c.logger.Debug().Msgf("broadcast message %s to %+v", msg.WrappedMessage, msg.PeersID)
 			c.Broadcast(msg.PeersID, wrappedMsgBytes)
 
 		case <-c.stopChan:

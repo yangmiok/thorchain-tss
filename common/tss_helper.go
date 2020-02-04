@@ -151,7 +151,12 @@ func (t *TssCommon) getBlamePubKeysNotInList(peers []string) ([]string, error) {
 	var partiesNotInList []string
 	// we convert nodes (NOT in the peers list) P2PID to public key
 	for partyID, p2pID := range t.PartyIDtoP2PID {
-		if t.partyInfo.Party.PartyID().Id == partyID {
+		// todo fix this error
+		var thisParty btss.Party
+		for _, val := range t.partyInfo.PartyMap {
+			thisParty = *val
+		}
+		if thisParty.PartyID().Id == partyID {
 			continue
 		}
 		found := false

@@ -87,8 +87,11 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 		return nil, err
 	}
 
+	keyGenPartyMap := make(map[string]*btss.Party)
+	keyGenPartyMap["1"] = &keyGenParty
+
 	tKeyGen.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
-		Party:      keyGenParty,
+		PartyMap:   keyGenPartyMap,
 		PartyIDMap: partyIDMap,
 	})
 	tKeyGen.tssCommonStruct.P2PPeers = common.GetPeersID(tKeyGen.tssCommonStruct.PartyIDtoP2PID, tKeyGen.tssCommonStruct.GetLocalPeerID())
