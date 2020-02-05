@@ -154,7 +154,7 @@ func (t *TssCommon) getBlamePubKeysNotInList(peers []string) ([]string, error) {
 		// todo fix this error
 		var thisParty btss.Party
 		for _, val := range t.partyInfo.PartyMap {
-			thisParty = *val
+			thisParty = val
 		}
 		if thisParty.PartyID().Id == partyID {
 			continue

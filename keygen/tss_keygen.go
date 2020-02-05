@@ -87,8 +87,8 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 		return nil, err
 	}
 
-	keyGenPartyMap := make(map[string]*btss.Party)
-	keyGenPartyMap["1"] = &keyGenParty
+	keyGenPartyMap := make(map[string]btss.Party)
+	keyGenPartyMap["1"] = keyGenParty
 
 	tKeyGen.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
 		PartyMap:   keyGenPartyMap,
