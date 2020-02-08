@@ -18,6 +18,7 @@ require (
 	github.com/libp2p/go-libp2p-core v0.2.4
 	github.com/libp2p/go-libp2p-discovery v0.1.0
 	github.com/libp2p/go-libp2p-kad-dht v0.3.0
+	github.com/libp2p/go-libp2p-testing v0.1.0
 	github.com/libp2p/go-yamux v1.2.3
 	github.com/mattn/go-isatty v0.0.11 // indirect
 	github.com/multiformats/go-multiaddr v0.1.2

@@ -43,6 +43,20 @@ func NewPartyCoordinator(host host.Host) *PartyCoordinator {
 	}
 }
 
+// Start the party coordinator role
+func (pc *PartyCoordinator) Start() {
+	pc.logger.Info().Msg("start party coordinator")
+	pc.wg.Add(1)
+	go pc.ceremonyMonitor()
+}
+
+// Stop the PartyCoordinator rune
+func (pc *PartyCoordinator) Stop() {
+	defer pc.logger.Info().Msg("stop party coordinator")
+	close(pc.stopChan)
+	pc.wg.Wait()
+}
+
 // HandleStream handle party coordinate stream
 func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 	defer func() {

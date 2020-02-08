@@ -17,15 +17,21 @@ const (
 	TimeoutWriteHeader = time.Second
 )
 
+// applyDeadline will be true , and only disable it when we are doing test
+// the reason being the p2p network , mocknet, mock stream doesn't support SetReadDeadline ,SetWriteDeadline feature
+var applyDeadline = true
+
 // ReadLength will read the length from stream
 func ReadLength(stream network.Stream) (uint32, error) {
 	buf := make([]byte, LengthHeader)
 	r := io.LimitReader(stream, LengthHeader)
-	if err := stream.SetReadDeadline(time.Now().Add(TimeoutReadHeader)); nil != err {
-		if errReset := stream.Reset(); errReset != nil {
-			return 0, errReset
+	if applyDeadline {
+		if err := stream.SetReadDeadline(time.Now().Add(TimeoutReadHeader)); nil != err {
+			if errReset := stream.Reset(); errReset != nil {
+				return 0, errReset
+			}
+			return 0, err
 		}
-		return 0, err
 	}
 	_, err := r.Read(buf)
 	if err != nil && !errors.Is(err, io.EOF) {
@@ -40,11 +46,13 @@ func ReadLength(stream network.Stream) (uint32, error) {
 // ReadPayload from stream
 func ReadPayload(stream network.Stream, length uint32) ([]byte, error) {
 	buf := make([]byte, length)
-	if err := stream.SetReadDeadline(time.Now().Add(TimeoutReadPayload)); nil != err {
-		if errReset := stream.Reset(); errReset != nil {
-			return nil, errReset
+	if applyDeadline {
+		if err := stream.SetReadDeadline(time.Now().Add(TimeoutReadPayload)); nil != err {
+			if errReset := stream.Reset(); errReset != nil {
+				return nil, errReset
+			}
+			return nil, err
 		}
-		return nil, err
 	}
 
 	_, err := stream.Read(buf)
@@ -61,13 +69,14 @@ func ReadPayload(stream network.Stream, length uint32) ([]byte, error) {
 func WriteLength(stream network.Stream, length uint32) error {
 	buf := make([]byte, LengthHeader)
 	binary.LittleEndian.PutUint32(buf, length)
-	if err := stream.SetWriteDeadline(time.Now().Add(TimeoutWriteHeader)); nil != err {
-		if errReset := stream.Reset(); errReset != nil {
-			return errReset
+	if applyDeadline {
+		if err := stream.SetWriteDeadline(time.Now().Add(TimeoutWriteHeader)); nil != err {
+			if errReset := stream.Reset(); errReset != nil {
+				return errReset
+			}
+			return fmt.Errorf("fail to write length to stream: %w", err)
 		}
-		return fmt.Errorf("fail to write length to stream: %w", err)
 	}
-
 	_, err := stream.Write(buf)
 	if err != nil {
 		if errReset := stream.Reset(); errReset != nil {
