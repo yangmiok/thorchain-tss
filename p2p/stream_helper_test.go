@@ -79,6 +79,7 @@ func (m MockNetworkStream) Conn() network.Conn {
 }
 
 func TestReadLength(t *testing.T) {
+
 	testCases := []struct {
 		name           string
 		streamProvider func() network.Stream
@@ -139,6 +140,7 @@ func TestReadLength(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
+		applyDeadline = true
 		t.Run(tc.name, func(st *testing.T) {
 			stream := tc.streamProvider()
 			l, err := ReadLength(stream)
@@ -177,21 +179,9 @@ func TestReadPayload(t *testing.T) {
 			expectedBytes: []byte("hello world"),
 			expectError:   false,
 		},
-		{
-			name: "fail to set read deadline should return an error",
-			streamProvider: func() *MockNetworkStream {
-				stream := NewMockNetworkStream()
-				input := []byte("hello world")
-				_ = WriteLength(stream, uint32(len(input)))
-				stream.Buffer.Write(input)
-				stream.errSetReadDeadLine = true
-				return stream
-			},
-			expectedBytes: nil,
-			expectError:   true,
-		},
 	}
 	for _, tc := range testCases {
+		applyDeadline = true
 		t.Run(tc.name, func(st *testing.T) {
 			stream := tc.streamProvider()
 			l, err := ReadLength(stream)
