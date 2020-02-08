@@ -1,7 +1,11 @@
 package p2p
 
 import (
+	"errors"
+	"fmt"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/libp2p/go-libp2p-core/network"
@@ -11,12 +15,14 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/messages"
 )
 
-type JoinPartyCallback func(msg *messages.JoinPartyRequest) error
+const WaitForPartyGatheringTimeout time.Duration = time.Minute
 
 type PartyCoordinator struct {
 	logger       zerolog.Logger
 	ceremonyLock *sync.Mutex
 	ceremonies   map[string]*Ceremony
+	wg           *sync.WaitGroup
+	stopChan     chan struct{}
 }
 
 // NewPartyCoordinator create a new instance of PartyCoordinator
@@ -25,6 +31,8 @@ func NewPartyCoordinator() *PartyCoordinator {
 		logger:       log.With().Str("module", "party_coordinator").Logger(),
 		ceremonyLock: &sync.Mutex{},
 		ceremonies:   make(map[string]*Ceremony),
+		wg:           &sync.WaitGroup{},
+		stopChan:     make(chan struct{}),
 	}
 }
 
@@ -53,12 +61,174 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 		logger.Err(err).Msg("fail to unmarshal join party request")
 		return
 	}
-
-	if err := pc.onJoinParty(msg); err != nil {
-
+	joinParty := &JoinParty{
+		Msg:  &msg,
+		Peer: remotePeer,
+		Resp: make(chan *messages.JoinPartyResponse, 1),
+	}
+	if err := pc.onJoinParty(joinParty); err != nil {
+		if errors.Is(err, errPartyGathered) {
+			// join too late , ceremony already gather enough parties , and started already
+			if err := pc.writeResponse(stream, &messages.JoinPartyResponse{
+				ID:   msg.ID,
+				Type: messages.JoinPartyResponse_AlreadyStarted,
+			}); err != nil {
+				logger.Error().Err(err).Msg("fail to write response to stream")
+				return
+			}
+		}
+	}
+	for {
+		select {
+		case r := <-joinParty.Resp:
+			if err := pc.writeResponse(stream, r); err != nil {
+				logger.Error().Err(err).Msg("fail to write response to stream")
+				return
+			}
+		case <-time.After(WaitForPartyGatheringTimeout):
+			// TODO make this timeout dynamic based on the threshold
+			if !pc.onJoinPartyTimeout(joinParty) {
+				if err := pc.writeResponse(stream, &messages.JoinPartyResponse{
+					ID:   msg.ID,
+					Type: messages.JoinPartyResponse_Timeout,
+				}); err != nil {
+					logger.Error().Err(err).Msg("fail to write response to stream")
+					return
+				}
+			}
+		}
 	}
 }
 
-func (pc *PartyCoordinator) onJoinParty(msg *messages.JoinPartyRequest) error {
+// writeResponse write the joinPartyResponse
+func (pc *PartyCoordinator) writeResponse(stream network.Stream, resp *messages.JoinPartyResponse) error {
+	buf, err := proto.Marshal(resp)
+	if err != nil {
+		return fmt.Errorf("fail to marshal resp to byte: %w", err)
+	}
+	_, err = stream.Write(buf)
+	if err != nil {
+		// when fail to write to the stream we shall reset it
+		if resetErr := stream.Reset(); resetErr != nil {
+			return fmt.Errorf("fail to reset the stream: %w", err)
+		}
+		return fmt.Errorf("fail to write response to stream: %w", err)
+	}
 	return nil
+}
+
+var (
+	errPartyGathered     = errors.New("ceremony party already assembled")
+	errPartyGatherFailed = errors.New("ceremony party gathering failed")
+)
+
+// onJoinParty is a call back function
+func (pc *PartyCoordinator) onJoinParty(joinParty *JoinParty) error {
+	pc.logger.Info().
+		Str("ID", joinParty.Msg.ID).
+		Str("remote peer", joinParty.Peer.String()).
+		Int32("threshold", joinParty.Msg.Threshold).
+		Str("peer ids", strings.Join(joinParty.Msg.PeerID, ",")).
+		Msgf("get join party request")
+	pc.ceremonyLock.Lock()
+	defer pc.ceremonyLock.Unlock()
+	c, ok := pc.ceremonies[joinParty.Msg.ID]
+	if !ok {
+		ceremony := &Ceremony{
+			ID:        joinParty.Msg.ID,
+			Threshold: uint32(joinParty.Msg.Threshold),
+			JoinPartyRequests: []*JoinParty{
+				joinParty,
+			},
+			Status:  GatheringParties,
+			Started: time.Now().UTC(),
+		}
+		pc.ceremonies[joinParty.Msg.ID] = ceremony
+		return nil
+	}
+	if c.Status == Finished {
+		return errPartyGathered
+	}
+
+	c.JoinPartyRequests = append(c.JoinPartyRequests, joinParty)
+	if !c.IsReady() {
+		// Ceremony is not ready , still waiting for more party to join
+		return nil
+	}
+
+	resp := &messages.JoinPartyResponse{
+		ID:     c.ID,
+		Type:   messages.JoinPartyResponse_Success,
+		PeerID: c.GetParties(),
+	}
+	for _, item := range c.JoinPartyRequests {
+		select {
+		case <-pc.stopChan: // receive request to exit
+			return nil
+		case item.Resp <- resp:
+		}
+	}
+	c.Status = Finished
+	return nil
+}
+
+// onJoinPartyTimeout this method is to deal with the follow scenario
+// the join party request had been waiting for a while(WaitForPartyGatheringTimeout)
+// but it doesn't get enough nodes to start the ceremony , thus it trying to withdraw it's request
+// the first bool return value indicate whether it should give up sending the timeout resp back to client
+// usually that means a timeout and success has almost step on each other's foot, it should give up timeout , because the
+// success resp is already there
+func (pc *PartyCoordinator) onJoinPartyTimeout(joinParty *JoinParty) bool {
+	pc.logger.Info().
+		Str("ID", joinParty.Msg.ID).
+		Str("remote peer", joinParty.Peer.String()).
+		Int32("threshold", joinParty.Msg.Threshold).
+		Str("peer ids", strings.Join(joinParty.Msg.PeerID, ",")).
+		Msgf("join party timeout")
+	pc.ceremonyLock.Lock()
+	defer pc.ceremonyLock.Unlock()
+	c, ok := pc.ceremonies[joinParty.Msg.ID]
+	if !ok {
+		return false
+	}
+	// it could be timeout / finish almost happen at the same time, we give up timeout
+	if c.Status == Finished {
+		return true
+	}
+	// remove this party as they sick of waiting
+	idxToDelete := -1
+	for idx, p := range c.JoinPartyRequests {
+		if p.Peer == joinParty.Peer {
+			idxToDelete = idx
+		}
+	}
+	c.JoinPartyRequests = append(c.JoinPartyRequests[:idxToDelete], c.JoinPartyRequests[idxToDelete+1:]...)
+	return false
+}
+
+func (pc *PartyCoordinator) ceremonyMonitor() {
+	defer pc.wg.Done()
+	for {
+		select {
+		case <-pc.stopChan:
+			return
+		case <-time.After(time.Second * 30):
+			pc.markCeremony()
+		}
+	}
+}
+
+func (pc *PartyCoordinator) markCeremony() {
+	pc.ceremonyLock.Lock()
+	defer pc.ceremonyLock.Unlock()
+	for key, c := range pc.ceremonies {
+		if time.Since(c.Started) > (2 * WaitForPartyGatheringTimeout) {
+			pc.logger.Info().
+				Str("ID", key).
+				Str("Status", c.Status.String()).
+				Str("started", c.Started.String()).
+				Msg("remove ceremony")
+			delete(pc.ceremonies, key)
+		}
+	}
 }

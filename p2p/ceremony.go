@@ -14,6 +14,21 @@ const (
 	Finished
 )
 
+// String implement fmt.Stringer
+func (cs CeremonyStatus) String() string {
+	switch cs {
+	case NA:
+		return "unknown"
+	case GatheringParties:
+		return "gathering"
+	case Failed:
+		return "failed"
+	case Finished:
+		return "finished"
+	}
+	return ""
+}
+
 // Ceremony can be a keygen ceremony or key sign ceremony
 type Ceremony struct {
 	ID                string         // ID , it should be the hash of keygen / keysign payload
@@ -34,9 +49,6 @@ func (c *Ceremony) IsReady() bool {
 
 // GetParties return a list of peer id that will be doing the upcoming ceremony
 func (c *Ceremony) GetParties() []string {
-	if !c.IsReady() {
-		return nil
-	}
 	var parties []string
 	for _, item := range c.JoinPartyRequests {
 		parties = append(parties, item.Peer.String())
