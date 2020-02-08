@@ -1,14 +1,19 @@
 package p2p
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-yamux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -19,6 +24,7 @@ const WaitForPartyGatheringTimeout time.Duration = time.Minute
 
 type PartyCoordinator struct {
 	logger       zerolog.Logger
+	host         host.Host
 	ceremonyLock *sync.Mutex
 	ceremonies   map[string]*Ceremony
 	wg           *sync.WaitGroup
@@ -26,9 +32,10 @@ type PartyCoordinator struct {
 }
 
 // NewPartyCoordinator create a new instance of PartyCoordinator
-func NewPartyCoordinator() *PartyCoordinator {
+func NewPartyCoordinator(host host.Host) *PartyCoordinator {
 	return &PartyCoordinator{
 		logger:       log.With().Str("module", "party_coordinator").Logger(),
+		host:         host,
 		ceremonyLock: &sync.Mutex{},
 		ceremonies:   make(map[string]*Ceremony),
 		wg:           &sync.WaitGroup{},
@@ -61,40 +68,42 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 		logger.Err(err).Msg("fail to unmarshal join party request")
 		return
 	}
+	resp, err := pc.processJoinPartyRequest(remotePeer, &msg)
+	if err != nil {
+		logger.Error().Err(err).Msg("fail to process join party request")
+		return
+	}
+	if err := pc.writeResponse(stream, resp); err != nil {
+		logger.Error().Err(err).Msg("fail to write response to stream")
+	}
+}
+
+func (pc *PartyCoordinator) processJoinPartyRequest(remotePeer peer.ID, msg *messages.JoinPartyRequest) (*messages.JoinPartyResponse, error) {
 	joinParty := &JoinParty{
-		Msg:  &msg,
+		Msg:  msg,
 		Peer: remotePeer,
 		Resp: make(chan *messages.JoinPartyResponse, 1),
 	}
 	if err := pc.onJoinParty(joinParty); err != nil {
 		if errors.Is(err, errPartyGathered) {
 			// join too late , ceremony already gather enough parties , and started already
-			if err := pc.writeResponse(stream, &messages.JoinPartyResponse{
+			return &messages.JoinPartyResponse{
 				ID:   msg.ID,
 				Type: messages.JoinPartyResponse_AlreadyStarted,
-			}); err != nil {
-				logger.Error().Err(err).Msg("fail to write response to stream")
-				return
-			}
+			}, nil
 		}
 	}
 	for {
 		select {
 		case r := <-joinParty.Resp:
-			if err := pc.writeResponse(stream, r); err != nil {
-				logger.Error().Err(err).Msg("fail to write response to stream")
-				return
-			}
+			return r, nil
 		case <-time.After(WaitForPartyGatheringTimeout):
 			// TODO make this timeout dynamic based on the threshold
 			if !pc.onJoinPartyTimeout(joinParty) {
-				if err := pc.writeResponse(stream, &messages.JoinPartyResponse{
+				return &messages.JoinPartyResponse{
 					ID:   msg.ID,
 					Type: messages.JoinPartyResponse_Timeout,
-				}); err != nil {
-					logger.Error().Err(err).Msg("fail to write response to stream")
-					return
-				}
+				}, nil
 			}
 		}
 	}
@@ -231,4 +240,52 @@ func (pc *PartyCoordinator) markCeremony() {
 			delete(pc.ceremonies, key)
 		}
 	}
+}
+
+// JoinParty join a ceremony , it could be keygen or key sign
+func (pc *PartyCoordinator) JoinParty(remotePeer peer.ID, msg *messages.JoinPartyRequest) (*messages.JoinPartyResponse, error) {
+	if remotePeer == pc.host.ID() {
+		return pc.processJoinPartyRequest(remotePeer, msg)
+	}
+	msgBuf, err := proto.Marshal(msg)
+	if err != nil {
+		return nil, fmt.Errorf("fail to marshal msg to bytes: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+	stream, err := pc.host.NewStream(ctx, remotePeer, joinPartyProtocol)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create stream to peer(%s):%w", remotePeer, err)
+	}
+	pc.logger.Info().Msgf("open stream to (%s) successfully", remotePeer)
+	defer func() {
+		if err := stream.Close(); err != nil {
+			pc.logger.Error().Err(err).Msg("fail to close stream")
+		}
+	}()
+	if err := WriteLength(stream, uint32(len(msgBuf))); err != nil {
+		return nil, err
+	}
+	_, err = stream.Write(msgBuf)
+	if err != nil {
+		if errReset := stream.Reset(); errReset != nil {
+			return nil, errReset
+		}
+		return nil, fmt.Errorf("fail to write message to stream:%w", err)
+	}
+	// read response
+	respBuf, err := ioutil.ReadAll(stream)
+	if err != nil {
+		if err != yamux.ErrConnectionReset {
+			return nil, fmt.Errorf("fail to read response: %w", err)
+		}
+	}
+	if len(respBuf) == 0 {
+		return nil, errors.New("fail to get response")
+	}
+	var resp messages.JoinPartyResponse
+	if err := proto.Unmarshal(respBuf, &resp); err != nil {
+		return nil, fmt.Errorf("fail to unmarshal JoinGameResp: %w", err)
+	}
+	return &resp, nil
 }
