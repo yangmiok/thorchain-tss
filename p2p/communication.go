@@ -24,7 +24,11 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var joinPartyProtocol protocol.ID = "/p2p/join-party"
+var (
+	joinPartyProtocol protocol.ID = "/p2p/join-party"
+	keygenProtocolID  protocol.ID = "/p2p/tss-keygen"
+	keysignProtocolID protocol.ID = "/p2p/tss-keysign"
+)
 
 // TSSProtocolID protocol id used for tss
 var TSSProtocolID protocol.ID = "/p2p/tss"

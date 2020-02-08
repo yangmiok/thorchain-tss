@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/binance-chain/go-sdk/common/types"
 	bkeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	maddr "github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog"
@@ -50,6 +52,9 @@ func NewTss(
 	conf common.TssConfig,
 	preParams *bkeygen.LocalPreParams,
 ) (*TssServer, error) {
+	if os.Getenv("NET") == "testnet" || os.Getenv("NET") == "mocknet" {
+		types.Network = types.TestNetwork
+	}
 	priKey, err := getPriKey(string(priKeyBytes))
 	if err != nil {
 		return nil, errors.New("cannot parse the private key")
