@@ -11,7 +11,7 @@ func LeaderNode(buf []byte, numNodes int32) (int32, error) {
 		return -1, err
 	}
 	result := int32(h.Sum32())
-	if result < -1 {
+	if result < 0 {
 		result = result * -1
 	}
 	return result % numNodes, nil
