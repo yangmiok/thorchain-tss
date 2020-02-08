@@ -141,8 +141,7 @@ func (pc *PartyCoordinator) writeResponse(stream network.Stream, resp *messages.
 }
 
 var (
-	errPartyGathered     = errors.New("ceremony party already assembled")
-	errPartyGatherFailed = errors.New("ceremony party gathering failed")
+	errPartyGathered = errors.New("ceremony party already assembled")
 )
 
 // onJoinParty is a call back function
