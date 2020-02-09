@@ -295,6 +295,7 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	c.host = h
 	c.logger.Info().Msgf("Host created, we are: %s, at: %s", h.ID(), h.Addrs())
 	h.SetStreamHandler(TSSProtocolID, c.handleStream)
+
 	// Start a DHT, for use in peer discovery. We can't just make a new DHT
 	// client because we want each peer to maintain its own local copy of the
 	// DHT, so that the bootstrapping node of the DHT can go down without

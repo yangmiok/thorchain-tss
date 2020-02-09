@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"sort"
@@ -205,4 +206,12 @@ func (t *TssServer) requestToMsgId(request interface{}) (string, error) {
 		return "", err
 	}
 	return msgID, nil
+}
+
+func getThreshold(value int) (int, error) {
+	if value < 0 {
+		return 0, errors.New("negative input")
+	}
+	threshold := int(math.Ceil(float64(value)*2.0/3.0)) - 1
+	return threshold, nil
 }
