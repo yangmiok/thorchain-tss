@@ -32,7 +32,7 @@ func (s *FileStateMgrTestSuite) TestNewFileStateMgr(c *C) {
 	c.Assert(fileName, Equals, filepath.Join(f, "localstate-whatever.json"))
 }
 func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
-	stateItem := KeygenLocalStateItem{
+	stateItem := KeygenLocalState{
 		PubKey:    "wasdfasdfasdfasdfasdfasdf",
 		LocalData: keygen.NewLocalPartySaveData(5),
 		ParticipantKeys: []string{

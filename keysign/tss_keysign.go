@@ -51,7 +51,7 @@ func (tKeySign *TssKeySign) GetTssCommonStruct() *common.TssCommon {
 }
 
 // signMessage
-func (tKeySign *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage.KeygenLocalStateItem, parties []string) (*signing.SignatureData, error) {
+func (tKeySign *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage.KeygenLocalState, parties []string) (*signing.SignatureData, error) {
 	partiesID, localPartyID, err := common.GetParties(parties, localStateItem.LocalPartyKey)
 	tKeySign.localParty = localPartyID
 	if err != nil {

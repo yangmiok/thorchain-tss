@@ -4,9 +4,9 @@ package storage
 type MockLocalStateManager struct {
 }
 
-func (s *MockLocalStateManager) SaveLocalState(state KeygenLocalStateItem) error {
+func (s *MockLocalStateManager) SaveLocalState(state KeygenLocalState) error {
 	return nil
 }
-func (s *MockLocalStateManager) GetLocalState(pubKey string) (KeygenLocalStateItem, error) {
-	return KeygenLocalStateItem{}, nil
+func (s *MockLocalStateManager) GetLocalState(pubKey string) (KeygenLocalState, error) {
+	return KeygenLocalState{}, nil
 }

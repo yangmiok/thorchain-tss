@@ -11,8 +11,8 @@ import (
 	"github.com/binance-chain/tss-lib/ecdsa/keygen"
 )
 
-// KeygenLocalStateItem is a structure used to represent the data we saved locally for different keygen
-type KeygenLocalStateItem struct {
+// KeygenLocalState is a structure used to represent the data we saved locally for different keygen
+type KeygenLocalState struct {
 	PubKey          string                    `json:"pub_key"`
 	LocalData       keygen.LocalPartySaveData `json:"local_data"`
 	ParticipantKeys []string                  `json:"participant_keys"` // the paticipant of last key gen
@@ -22,8 +22,8 @@ type KeygenLocalStateItem struct {
 // LocalStateManager provide necessary methods to manage the local state, save it , and read it back
 // LocalStateManager doesn't have any opinion in regards to where it should be persistent to
 type LocalStateManager interface {
-	SaveLocalState(state KeygenLocalStateItem) error
-	GetLocalState(pubKey string) (KeygenLocalStateItem, error)
+	SaveLocalState(state KeygenLocalState) error
+	GetLocalState(pubKey string) (KeygenLocalState, error)
 }
 
 // FileStateMgr save the local state to file
@@ -53,7 +53,7 @@ func (fsm *FileStateMgr) getFilePathName(pubKey string) string {
 }
 
 // SaveLocalState save the local state to file
-func (fsm *FileStateMgr) SaveLocalState(state KeygenLocalStateItem) error {
+func (fsm *FileStateMgr) SaveLocalState(state KeygenLocalState) error {
 	buf, err := json.Marshal(state)
 	if err != nil {
 		return fmt.Errorf("fail to marshal KeygenLocalState to json: %w", err)
@@ -63,22 +63,22 @@ func (fsm *FileStateMgr) SaveLocalState(state KeygenLocalStateItem) error {
 }
 
 // GetLocalState read the local state from file system
-func (fsm *FileStateMgr) GetLocalState(pubKey string) (KeygenLocalStateItem, error) {
+func (fsm *FileStateMgr) GetLocalState(pubKey string) (KeygenLocalState, error) {
 	if len(pubKey) == 0 {
-		return KeygenLocalStateItem{}, errors.New("pub key is empty")
+		return KeygenLocalState{}, errors.New("pub key is empty")
 	}
 	filePathName := fsm.getFilePathName(pubKey)
 	if _, err := os.Stat(filePathName); os.IsNotExist(err) {
-		return KeygenLocalStateItem{}, err
+		return KeygenLocalState{}, err
 	}
 
 	buf, err := ioutil.ReadFile(filePathName)
 	if err != nil {
-		return KeygenLocalStateItem{}, fmt.Errorf("file to read from file(%s): %w", filePathName, err)
+		return KeygenLocalState{}, fmt.Errorf("file to read from file(%s): %w", filePathName, err)
 	}
-	var localState KeygenLocalStateItem
+	var localState KeygenLocalState
 	if err := json.Unmarshal(buf, &localState); nil != err {
-		return KeygenLocalStateItem{}, fmt.Errorf("fail to unmarshal KeygenLocalState: %w", err)
+		return KeygenLocalState{}, fmt.Errorf("fail to unmarshal KeygenLocalState: %w", err)
 	}
 	return localState, nil
 }

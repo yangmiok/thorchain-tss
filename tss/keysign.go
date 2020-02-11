@@ -88,7 +88,7 @@ func (t *TssServer) KeySign(req keysign.KeySignReq) (keysign.KeySignResp, error)
 	), nil
 }
 
-func (t *TssServer) joinParty(msgID string, messageToSign []byte, localStateItem storage.KeygenLocalStateItem) (*messages.JoinPartyResponse, error) {
+func (t *TssServer) joinParty(msgID string, messageToSign []byte, localStateItem storage.KeygenLocalState) (*messages.JoinPartyResponse, error) {
 	keys := localStateItem.ParticipantKeys
 	sort.Slice(keys, func(i, j int) bool {
 		return keys[i] < keys[j]

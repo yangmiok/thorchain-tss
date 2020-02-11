@@ -63,7 +63,7 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 	if err != nil {
 		return nil, fmt.Errorf("fail to get keygen parties: %w", err)
 	}
-	keyGenLocalStateItem := storage.KeygenLocalStateItem{
+	keyGenLocalStateItem := storage.KeygenLocalState{
 		ParticipantKeys: keygenReq.Keys,
 		LocalPartyKey:   tKeyGen.localNodePubKey,
 	}
@@ -111,7 +111,7 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 	outCh <-chan btss.Message,
 	endCh <-chan bkg.LocalPartySaveData,
-	keyGenLocalStateItem storage.KeygenLocalStateItem) (*crypto.ECPoint, error) {
+	keyGenLocalStateItem storage.KeygenLocalState) (*crypto.ECPoint, error) {
 	defer tKeyGen.logger.Info().Msg("finished keygen process")
 	tKeyGen.logger.Info().Msg("start to read messages from local party")
 	tssConf := tKeyGen.tssCommonStruct.GetConf()
