@@ -41,7 +41,7 @@ func (t *TssServer) KeygenHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 	t.logger.Info().Msg("receive key gen request")
 	decoder := json.NewDecoder(r.Body)
-	var keygenReq keygen.KeyGenReq
+	var keygenReq keygen.Request
 	if err := decoder.Decode(&keygenReq); nil != err {
 		t.logger.Error().Err(err).Msg("fail to decode keygen request")
 		w.WriteHeader(http.StatusBadRequest)
@@ -79,7 +79,7 @@ func (t *TssServer) KeySignHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 	t.logger.Info().Msg("receive key sign request")
 
-	var keySignReq keysign.KeySignReq
+	var keySignReq keysign.Request
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&keySignReq); nil != err {
 		t.logger.Error().Err(err).Msg("fail to decode key sign request")

@@ -188,7 +188,7 @@ func (t *TssServer) Start(ctx context.Context) error {
 func (t *TssServer) requestToMsgId(request interface{}) (string, error) {
 	var dat []byte
 	switch value := request.(type) {
-	case keygen.KeyGenReq:
+	case keygen.Request:
 		keyAccumulation := ""
 		keys := value.Keys
 		sort.Strings(keys)
@@ -196,7 +196,7 @@ func (t *TssServer) requestToMsgId(request interface{}) (string, error) {
 			keyAccumulation += el
 		}
 		dat = []byte(keyAccumulation)
-	case keysign.KeySignReq:
+	case keysign.Request:
 		msgToSign, err := base64.StdEncoding.DecodeString(value.Message)
 		if err != nil {
 			t.logger.Error().Err(err).Msg("error in decode the keysign req")

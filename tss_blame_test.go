@@ -81,11 +81,11 @@ func blameInclude(c *C, blames []string, targets []int) {
 	}
 }
 
-func doStartKeygen(c *C, i int, locker *sync.Mutex, requestGroup *sync.WaitGroup, request []byte, keyGenRespArr *[]*keygen.KeyGenResp) {
+func doStartKeygen(c *C, i int, locker *sync.Mutex, requestGroup *sync.WaitGroup, request []byte, keyGenRespArr *[]*keygen.Response) {
 	defer requestGroup.Done()
 	url := fmt.Sprintf("http://127.0.0.1:%d/keygen", baseTssPort+i)
 	respByte := sendTestRequest(c, url, request)
-	var tempResp keygen.KeyGenResp
+	var tempResp keygen.Response
 	err := json.Unmarshal(respByte, &tempResp)
 	c.Assert(err, IsNil)
 	locker.Lock()
@@ -93,11 +93,11 @@ func doStartKeygen(c *C, i int, locker *sync.Mutex, requestGroup *sync.WaitGroup
 	locker.Unlock()
 }
 
-func doStartKeySign(c *C, i int, locker *sync.Mutex, requestGroup *sync.WaitGroup, request []byte, keySignRespArr *[]*keysign.KeySignResp) {
+func doStartKeySign(c *C, i int, locker *sync.Mutex, requestGroup *sync.WaitGroup, request []byte, keySignRespArr *[]*keysign.Response) {
 	defer requestGroup.Done()
 	url := fmt.Sprintf("http://127.0.0.1:%d/keysign", baseTssPort+i)
 	respByte := sendTestRequest(c, url, request)
-	var tempResp keysign.KeySignResp
+	var tempResp keysign.Response
 	err := json.Unmarshal(respByte, &tempResp)
 	c.Assert(err, IsNil)
 	locker.Lock()
@@ -153,11 +153,11 @@ func doObserveAndStop(c *C, testParties TestParties, expected int, cancel contex
 }
 
 func doBlameTimeoutTest(c *C, poolPubKey string, testParties TestParties, cancel context.CancelFunc) {
-	var keySignRespArr []*keysign.KeySignResp
+	var keySignRespArr []*keysign.Response
 	var locker sync.Mutex
 	requestGroup := sync.WaitGroup{}
 	msg := base64.StdEncoding.EncodeToString([]byte("hello"))
-	keySignReq := keysign.KeySignReq{
+	keySignReq := keysign.Request{
 		PoolPubKey: poolPubKey,
 		Message:    msg,
 	}

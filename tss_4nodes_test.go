@@ -159,10 +159,10 @@ func sendTestRequest(c *C, url string, request []byte) []byte {
 }
 
 func testKeySign(c *C, poolPubKey string, partyNum int) {
-	var keySignRespArr []*keysign.KeySignResp
+	var keySignRespArr []*keysign.Response
 	var locker sync.Mutex
 	msg := base64.StdEncoding.EncodeToString([]byte("hello"))
-	keySignReq := keysign.KeySignReq{
+	keySignReq := keysign.Request{
 		PoolPubKey: poolPubKey,
 		Message:    msg,
 	}
@@ -176,7 +176,7 @@ func testKeySign(c *C, poolPubKey string, partyNum int) {
 			url := fmt.Sprintf("http://127.0.0.1:%d/keysign", baseTssPort+i)
 			respByte := sendTestRequest(c, url, request)
 			if nil != respByte {
-				var tempResp keysign.KeySignResp
+				var tempResp keysign.Response
 				err = json.Unmarshal(respByte, &tempResp)
 				c.Assert(err, IsNil)
 				locker.Lock()
@@ -199,9 +199,9 @@ func testKeySign(c *C, poolPubKey string, partyNum int) {
 }
 
 func testKeyGen(c *C, partyNum int) string {
-	var keyGenRespArr []*keygen.KeyGenResp
+	var keyGenRespArr []*keygen.Response
 	var locker sync.Mutex
-	keyGenReq := keygen.KeyGenReq{
+	keyGenReq := keygen.Request{
 		Keys: testPubKeys[:],
 	}
 	request, err := json.Marshal(keyGenReq)
@@ -213,7 +213,7 @@ func testKeyGen(c *C, partyNum int) string {
 			defer requestGroup.Done()
 			url := fmt.Sprintf("http://127.0.0.1:%d/keygen", baseTssPort+i)
 			respByte := sendTestRequest(c, url, request)
-			var tempResp keygen.KeyGenResp
+			var tempResp keygen.Response
 			err = json.Unmarshal(respByte, &tempResp)
 			c.Assert(err, IsNil)
 			locker.Lock()
