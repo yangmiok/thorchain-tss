@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/binance-chain/tss-lib/ecdsa/keygen"
@@ -34,9 +33,12 @@ type FileStateMgr struct {
 
 // NewFileStateMgr create a new instance of the FileStateMgr which implements LocalStateManager
 func NewFileStateMgr(folder string) (*FileStateMgr, error) {
-	if len(folder) > 0 && path.Dir(folder) == "." {
-		if err := os.MkdirAll(folder, os.ModePerm); err != nil {
-			return nil, err
+	if len(folder) > 0 {
+		_, err := os.Stat(folder)
+		if err != nil && os.IsNotExist(err) {
+			if err := os.MkdirAll(folder, os.ModePerm); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return &FileStateMgr{folder: folder}, nil
