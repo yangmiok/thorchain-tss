@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"strings"
 	"sync"
 	"time"
 
@@ -96,11 +95,7 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 }
 
 func (pc *PartyCoordinator) processJoinPartyRequest(remotePeer peer.ID, msg *messages.JoinPartyRequest) (*messages.JoinPartyResponse, error) {
-	joinParty := &JoinParty{
-		Msg:  msg,
-		Peer: remotePeer,
-		Resp: make(chan *messages.JoinPartyResponse, 1),
-	}
+	joinParty := NewJoinParty(msg, remotePeer)
 	if err := pc.onJoinParty(joinParty); err != nil {
 		if errors.Is(err, errPartyGathered) {
 			// join too late , ceremony already gather enough parties , and started already
@@ -153,7 +148,6 @@ func (pc *PartyCoordinator) onJoinParty(joinParty *JoinParty) error {
 		Str("ID", joinParty.Msg.ID).
 		Str("remote peer", joinParty.Peer.String()).
 		Int32("threshold", joinParty.Msg.Threshold).
-		Str("peer ids", strings.Join(joinParty.Msg.PeerID, ",")).
 		Msgf("get join party request")
 	pc.ceremonyLock.Lock()
 	defer pc.ceremonyLock.Unlock()
@@ -182,11 +176,11 @@ func (pc *PartyCoordinator) onJoinParty(joinParty *JoinParty) error {
 	}
 
 	resp := &messages.JoinPartyResponse{
-		ID:     c.ID,
-		Type:   messages.JoinPartyResponse_Success,
-		PeerID: c.GetParties(),
+		ID:      c.ID,
+		Type:    messages.JoinPartyResponse_Success,
+		PeerIDs: c.GetParties(),
 	}
-	pc.logger.Info().Msgf("party formed: %+v", resp.PeerID)
+	pc.logger.Info().Msgf("party formed: %+v", resp.PeerIDs)
 	for _, item := range c.JoinPartyRequests {
 		select {
 		case <-pc.stopChan: // receive request to exit
@@ -209,7 +203,6 @@ func (pc *PartyCoordinator) onJoinPartyTimeout(joinParty *JoinParty) bool {
 		Str("ID", joinParty.Msg.ID).
 		Str("remote peer", joinParty.Peer.String()).
 		Int32("threshold", joinParty.Msg.Threshold).
-		Str("peer ids", strings.Join(joinParty.Msg.PeerID, ",")).
 		Msgf("join party timeout")
 	pc.ceremonyLock.Lock()
 	defer pc.ceremonyLock.Unlock()

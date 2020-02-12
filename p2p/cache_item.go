@@ -11,14 +11,18 @@ import (
 type StandbyMessage struct {
 	Msg           *WireMessage
 	Hash          string
+	Threshold     int
 	lock          *sync.Mutex
 	ConfirmedList map[peer.ID]string
 }
 
-func NewStandbyMessage(msg *WireMessage, hash string) *StandbyMessage {
+// NewStandbyMessage create a new instance of StnadbyMessage , msg can be nil , when msg is nil that means it received
+// a confirm message from other peer , before local node receive the actual message
+func NewStandbyMessage(msg *WireMessage, hash string, threshold int) *StandbyMessage {
 	return &StandbyMessage{
 		Msg:           msg,
 		Hash:          hash,
+		Threshold:     threshold,
 		lock:          &sync.Mutex{},
 		ConfirmedList: make(map[peer.ID]string),
 	}
