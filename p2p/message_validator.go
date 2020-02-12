@@ -65,23 +65,23 @@ func (mv *MessageValidator) onReceivedMessage(buf []byte, remotePeer peer.ID) {
 }
 
 func (mv *MessageValidator) onConfirmMessage(msg *messages.ConfirmMessage, remotePeer peer.ID) {
+	mv.logger.Info().Msgf("peer id: %s,msg:%+v", remotePeer.String(), msg)
 	sm := mv.getStandbyMessage(msg.Key)
 	if nil == sm {
 		// someone confirm the message before we do
-		sm := NewStandbyMessage(nil, msg.Hash, -1)
-		mv.cache[msg.Key] = sm
-		sm.UpdateConfirmList(remotePeer, msg.Hash)
-		return
+		sm = NewStandbyMessage(nil, msg.Hash, -1)
+		mv.setStandbyMessage(msg.Key, sm)
 	}
 	sm.UpdateConfirmList(remotePeer, msg.Hash)
+	mv.logger.Info().Msgf("sm:%+v", sm)
 	if sm.Msg == nil {
 		return
 	}
 
 	if sm.Threshold != -1 && sm.Threshold == sm.TotalConfirmed() {
 		mv.onMessageConfirmedCallback(sm.Msg)
+		mv.removeStandbyMessage(msg.Key)
 	}
-	mv.removeStandbyMessage(msg.Key)
 }
 func (mv *MessageValidator) removeStandbyMessage(key string) {
 	mv.lock.Lock()
@@ -92,6 +92,11 @@ func (mv *MessageValidator) getStandbyMessage(key string) *StandbyMessage {
 	mv.lock.Lock()
 	defer mv.lock.Unlock()
 	return mv.cache[key]
+}
+func (mv *MessageValidator) setStandbyMessage(key string, msg *StandbyMessage) {
+	mv.lock.Lock()
+	defer mv.lock.Unlock()
+	mv.cache[key] = msg
 }
 
 // msgToHashString , this is required to be here for now, to avoid import cycle
@@ -106,8 +111,7 @@ func msgToHashString(msg []byte) (string, error) {
 
 // VerifyMessage add a message to local cache, and send messages to all the peers
 func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) error {
-	mv.lock.Lock()
-	defer mv.lock.Unlock()
+	mv.logger.Info().Msgf("+v", peers)
 	hash, err := msgToHashString(msg.Message)
 	if err != nil {
 		return fmt.Errorf("fail to generate hash from msg: %w", err)
@@ -117,13 +121,13 @@ func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) err
 	sm := mv.getStandbyMessage(key)
 	if sm == nil {
 		// first one to receive the messsage
-		sm := NewStandbyMessage(msg, hash, len(peers)+1)
-		mv.cache[key] = sm
-		sm.UpdateConfirmList(mv.host.ID(), hash)
-		return nil
+		sm = NewStandbyMessage(msg, hash, len(peers)+1)
+		mv.setStandbyMessage(key, sm)
 	}
+	sm.UpdateConfirmList(mv.host.ID(), hash)
 	if sm.Msg == nil {
 		sm.Msg = msg
+		sm.Threshold = len(peers) + 1
 	}
 	buf, err := proto.Marshal(&messages.ConfirmMessage{
 		Key:  key,
@@ -134,11 +138,12 @@ func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) err
 	}
 	mv.messenger.Send(buf, peers)
 	// fan out the messages
-	sm.UpdateConfirmList(mv.host.ID(), hash)
+
+	mv.logger.Info().Msgf("==>after sm:%+v", sm)
 	if sm.Threshold != -1 && sm.Threshold == sm.TotalConfirmed() {
 		mv.onMessageConfirmedCallback(sm.Msg)
+		mv.removeStandbyMessage(key)
 	}
-	mv.removeStandbyMessage(key)
 	return nil
 }
 

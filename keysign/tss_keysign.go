@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/binance-chain/tss-lib/ecdsa/signing"
 	btss "github.com/binance-chain/tss-lib/tss"
+	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -18,47 +21,106 @@ import (
 )
 
 type TssKeySign struct {
-	logger          zerolog.Logger
-	tssCommonStruct *common.TssCommon
-	stopChan        *chan struct{} // channel to indicate whether we should stop
-	homeBase        string
-	syncMsg         chan *p2p.Message
-	localParty      *btss.PartyID
-	keySignCurrent  *string
+	logger           zerolog.Logger
+	host             host.Host
+	messageValidator *p2p.MessageValidator
+	messenger        *p2p.Messenger
+	lock             *sync.Mutex
+	partyInfo        *common.PartyInfo
+	stopChan         chan struct{} // channel to indicate whether we should stop
 }
 
-func NewTssKeySign(localP2PID string,
-	conf common.TssConfig,
-	broadcastChan chan *p2p.BroadcastMsgChan,
-	stopChan *chan struct{},
-	keySignCurrent *string,
-	msgID string) TssKeySign {
-	return TssKeySign{
-		logger:          log.With().Str("module", "keySign").Logger(),
-		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID),
-		stopChan:        stopChan,
-		localParty:      nil,
-		keySignCurrent:  keySignCurrent,
+func NewTssKeySign(host host.Host) (*TssKeySign, error) {
+	tKeySign := &TssKeySign{
+		logger:   log.With().Str("module", "keysign").Logger(),
+		host:     host,
+		lock:     &sync.Mutex{},
+		stopChan: make(chan struct{}),
+	}
+	messageValidator, err := p2p.NewMessageValidator(host, tKeySign.onMessageCallback, p2p.KeysignVerifyProtocol)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create message validator")
+	}
+	tKeySign.messageValidator = messageValidator
+	messenger, err := p2p.NewMessenger(p2p.KeysignProtocol, host, tKeySign.onMessageReceived)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create messenger: %w", err)
+	}
+	tKeySign.messenger = messenger
+	return tKeySign, nil
+}
+func (ks *TssKeySign) onMessageReceived(buf []byte, remotePeer peer.ID) {
+	var msg p2p.WireMessage
+	if err := json.Unmarshal(buf, &msg); err != nil {
+		ks.logger.Error().Err(err).Msg("fail to unmarshal keygen message")
+		return
+	}
+	peers := ks.getPeers([]peer.ID{
+		remotePeer,
+		ks.host.ID(),
+	})
+	if err := ks.messageValidator.VerifyMessage(&msg, peers); err != nil {
+		ks.logger.Err(err).Msg("fail to verify message")
 	}
 }
 
-func (tKeySign *TssKeySign) GetTssKeySignChannels() chan *p2p.Message {
-	return tKeySign.tssCommonStruct.TssMsg
+func (ks *TssKeySign) onMessageCallback(msg *p2p.WireMessage) {
+	ks.lock.Lock()
+	defer ks.lock.Unlock()
+	if _, err := ks.partyInfo.Party.UpdateFromBytes(msg.Message, msg.Routing.From, msg.Routing.IsBroadcast); err != nil {
+		ks.logger.Error().Err(err).Msg("fail to update local party")
+		// get who to blame
+	}
 }
 
-func (tKeySign *TssKeySign) GetTssCommonStruct() *common.TssCommon {
-	return tKeySign.tssCommonStruct
+func (ks *TssKeySign) getPeers(exclude []peer.ID) []peer.ID {
+	ks.lock.Lock()
+	defer ks.lock.Unlock()
+	var output []peer.ID
+	for _, item := range ks.partyInfo.PartiesID {
+		shouldExclude := false
+		for _, p := range exclude {
+			if item.Moniker == p.String() {
+				shouldExclude = true
+				break
+			}
+		}
+		if !shouldExclude {
+			id, err := peer.IDB58Decode(item.Moniker)
+			if err != nil {
+				ks.logger.Err(err).Msg("fail to decode peer id")
+				return output
+			}
+			output = append(output, id)
+		}
+	}
+	return output
+}
+func (ks *TssKeySign) getPeersFromParty(parties []*btss.PartyID) []peer.ID {
+	ks.lock.Lock()
+	defer ks.lock.Unlock()
+	var output []peer.ID
+	for _, item := range ks.partyInfo.PartiesID {
+		for _, p := range parties {
+			if p.Id == item.Id && p.Moniker == item.Moniker {
+				id, err := peer.IDB58Decode(item.Moniker)
+				if err != nil {
+					ks.logger.Err(err).Msg("fail to decode peer id")
+					return output
+				}
+				output = append(output, id)
+			}
+		}
+	}
+	return output
 }
 
 // signMessage
-func (tKeySign *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage.KeygenLocalState, parties []string) (*signing.SignatureData, error) {
+func (ks *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage.KeygenLocalState, parties []string, messageID string) (*signing.SignatureData, error) {
 	partiesID, localPartyID, err := common.GetParties(parties, localStateItem.LocalPartyKey)
-	tKeySign.localParty = localPartyID
-	if err != nil {
-		return nil, fmt.Errorf("fail to form key sign party: %w", err)
-	}
+
 	if !common.Contains(partiesID, localPartyID) {
-		tKeySign.logger.Info().Msgf("we are not in this rounds key sign")
+		ks.logger.Info().Msgf("we are not in this rounds key sign")
 		return nil, nil
 	}
 	threshold, err := common.GetThreshold(len(localStateItem.ParticipantKeys))
@@ -66,7 +128,7 @@ func (tKeySign *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage
 		return nil, errors.New("fail to get threshold")
 	}
 
-	tKeySign.logger.Debug().Msgf("local party: %+v", localPartyID)
+	ks.logger.Debug().Msgf("local party: %+v", localPartyID)
 	ctx := btss.NewPeerContext(partiesID)
 	params := btss.NewParameters(ctx, localPartyID, len(partiesID), threshold)
 	outCh := make(chan btss.Message, len(partiesID))
@@ -77,125 +139,127 @@ func (tKeySign *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage
 		return nil, fmt.Errorf("fail to convert msg to hash int: %w", err)
 	}
 	keySignParty := signing.NewLocalParty(m, params, localStateItem.LocalData, outCh, endCh)
-	partyIDMap := common.SetupPartyIDMap(partiesID)
-	err = common.SetupIDMaps(partyIDMap, tKeySign.tssCommonStruct.PartyIDtoP2PID)
-	if err != nil {
-		tKeySign.logger.Error().Msgf("error in creating mapping between partyID and P2P ID")
-		return nil, err
-	}
-	tKeySign.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
-		Party:      keySignParty,
-		PartyIDMap: partyIDMap,
-	})
 
-	tKeySign.tssCommonStruct.P2PPeers = common.GetPeersID(tKeySign.tssCommonStruct.PartyIDtoP2PID, tKeySign.tssCommonStruct.GetLocalPeerID())
+	ks.setPartyInfo(&common.PartyInfo{
+		Party:     keySignParty,
+		PartiesID: partiesID,
+	})
 
 	// start the key sign
 	go func() {
 		if err := keySignParty.Start(); nil != err {
-			tKeySign.logger.Error().Err(err).Msg("fail to start key sign party")
+			ks.logger.Error().Err(err).Msg("fail to start key sign party")
 			close(errCh)
 		}
-		tKeySign.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
-			Party:      keySignParty,
-			PartyIDMap: partyIDMap,
-		})
-		tKeySign.logger.Debug().Msg("local party is ready")
+
+		ks.logger.Debug().Msg("local party is ready")
 	}()
 
-	result, err := tKeySign.processKeySign(errCh, outCh, endCh)
+	result, err := ks.processKeySign(errCh, outCh, endCh, messageID)
 	if err != nil {
 		return nil, fmt.Errorf("fail to process key sign: %w", err)
 	}
-	tKeySign.logger.Info().Msg("successfully sign the message")
+	ks.logger.Info().Msg("successfully sign the message")
 	return result, nil
 }
 
-func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan btss.Message, endCh <-chan signing.SignatureData) (*signing.SignatureData, error) {
-	defer tKeySign.logger.Info().Msg("key sign finished")
-	tKeySign.logger.Info().Msg("start to read messages from local party")
-	tssConf := tKeySign.tssCommonStruct.GetConf()
+func (ks *TssKeySign) setPartyInfo(partyInfo *common.PartyInfo) {
+	ks.lock.Lock()
+	defer ks.lock.Unlock()
+	ks.partyInfo = partyInfo
+}
+
+// TODO make keygen timeout calculate based on the number of parties
+func (ks *TssKeySign) getKeysignTimeout() time.Duration {
+	return time.Minute * 5
+}
+
+func (ks *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan btss.Message, endCh <-chan signing.SignatureData, messageID string) (*signing.SignatureData, error) {
+	defer ks.logger.Info().Msg("key sign finished")
+	ks.logger.Info().Msg("start to read messages from local party")
+	keysignTimeout := ks.getKeysignTimeout()
 	for {
 		select {
 		case <-errChan: // when key sign return
-			tKeySign.logger.Error().Msg("key sign failed")
+			ks.logger.Error().Msg("key sign failed")
 			return nil, errors.New("error channel closed fail to start local party")
-		case <-*tKeySign.stopChan: // when TSS processor receive signal to quit
+		case <-ks.stopChan: // when TSS processor receive signal to quit
 			return nil, errors.New("received exit signal")
-		case <-time.After(tssConf.KeySignTimeout):
+		case <-time.After(keysignTimeout):
 			// we bail out after KeySignTimeoutSeconds
-			tKeySign.logger.Error().Msgf("fail to sign message with %s", tssConf.KeySignTimeout.String())
-			tssCommonStruct := tKeySign.GetTssCommonStruct()
-			localCachedItems := tssCommonStruct.TryGetAllLocalCached()
-			blamePeers, err := tssCommonStruct.TssTimeoutBlame(localCachedItems)
-			if err != nil {
-				tKeySign.logger.Error().Err(err).Msg("fail to get the blamed peers")
-				tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, nil)
-				return nil, fmt.Errorf("fail to get the blamed peers %w", common.ErrTssTimeOut)
-			}
-			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blamePeers)
+			// tKeySign.logger.Error().Msgf("fail to sign message with %s", tssConf.KeySignTimeout.String())
+			// tssCommonStruct := tKeySign.GetTssCommonStruct()
+			// localCachedItems := tssCommonStruct.TryGetAllLocalCached()
+			// blamePeers, err := tssCommonStruct.TssTimeoutBlame(localCachedItems)
+			// if err != nil {
+			// 	tKeySign.logger.Error().Err(err).Msg("fail to get the blamed peers")
+			// 	tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, nil)
+			// 	return nil, fmt.Errorf("fail to get the blamed peers %w", common.ErrTssTimeOut)
+			// }
+			// tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blamePeers)
 			return nil, common.ErrTssTimeOut
 		case msg := <-outCh:
-			tKeySign.logger.Debug().Msgf(">>>>>>>>>>key sign msg: %s", msg.String())
+			ks.logger.Debug().Msgf(">>>>>>>>>>key sign msg: %s", msg.String())
 			// for the sake of performance, we do not lock the status update
 			// we report a rough status of current round
-			*tKeySign.keySignCurrent = msg.Type()
-			err := tKeySign.tssCommonStruct.ProcessOutCh(msg, p2p.TSSKeySignMsg)
+			buf, r, err := msg.WireBytes()
+			// if we cannot get the wire share, the tss keygen will fail, we just quit.
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("fail to get wire bytes: %w", err)
 			}
-		case m, ok := <-tKeySign.tssCommonStruct.TssMsg:
-			if !ok {
-				return nil, nil
+			wireMsg := p2p.WireMessage{
+				Routing:   r,
+				RoundInfo: msg.Type(),
+				Message:   buf,
+				MessageID: messageID,
 			}
-			var wrappedMsg p2p.WrappedMessage
-			if err := json.Unmarshal(m.Payload, &wrappedMsg); nil != err {
-				tKeySign.logger.Error().Err(err).Msg("fail to unmarshal wrapped message bytes")
-				return nil, err
+			jsonBuf, err := json.Marshal(wireMsg)
+			if err != nil {
+				return nil, fmt.Errorf("fail to marshal wire message: %w", err)
 			}
-
-			// create timeout func so we can ensure TSS doesn't get locked up and frozen
-			errChan := make(chan error, 1)
-			go func() {
-				err := tKeySign.tssCommonStruct.ProcessOneMessage(&wrappedMsg, m.PeerID.String())
-				errChan <- err
-			}()
-
-			select {
-			case err := <-errChan:
-				if err != nil {
-					tKeySign.logger.Error().Err(err).Msg("fail to process the received message")
-					return nil, err
-				}
-			case <-time.After(tKeySign.tssCommonStruct.GetConf().KeySignTimeout):
-				err := errors.New("timeout")
-				tKeySign.logger.Error().Err(err).Msg("fail to process the received message")
+			if r.To == nil && r.IsBroadcast {
+				peers := ks.getPeers([]peer.ID{
+					ks.host.ID(),
+				})
+				ks.messenger.Send(jsonBuf, peers)
+				continue
 			}
-
+			peers := ks.getPeersFromParty(r.To)
+			ks.messenger.Send(jsonBuf, peers)
 		case msg := <-endCh:
-			tKeySign.logger.Debug().Msg("we have done the key sign")
+			ks.logger.Debug().Msg("we have done the key sign")
 			return &msg, nil
 		}
 	}
 }
 
-func (tKeySign *TssKeySign) WriteKeySignResult(w http.ResponseWriter, R, S string, status common.Status) {
+func (ks *TssKeySign) WriteKeySignResult(w http.ResponseWriter, R, S string, status common.Status) {
 	// blame := common.NewBlame()
 	// blame.SetBlame(tKeySign.tssCommonStruct.Blame.FailReason, tKeySign.tssCommonStruct.Blame.BlameNodes)
 	signResp := Response{
 		R:      R,
 		S:      S,
 		Status: status,
-		Blame:  tKeySign.tssCommonStruct.BlamePeers,
+		Blame:  common.NoBlame,
 	}
 	jsonResult, err := json.MarshalIndent(signResp, "", "	")
 	if err != nil {
-		tKeySign.logger.Error().Err(err).Msg("fail to marshal response to json message")
+		ks.logger.Error().Err(err).Msg("fail to marshal response to json message")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	_, err = w.Write(jsonResult)
 	if err != nil {
-		tKeySign.logger.Error().Err(err).Msg("fail to write response")
+		ks.logger.Error().Err(err).Msg("fail to write response")
 	}
+}
+
+func (ks *TssKeySign) Start() {
+	ks.messenger.Start()
+	ks.messageValidator.Start()
+}
+func (ks *TssKeySign) Stop() {
+	ks.messenger.Stop()
+	ks.messageValidator.Stop()
+	close(ks.stopChan)
 }

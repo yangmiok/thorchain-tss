@@ -26,22 +26,6 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		return keysign.Response{}, err
 	}
 
-	keysignInstance := keysign.NewTssKeySign(
-		t.p2pCommunication.GetLocalPeerID(),
-		t.conf,
-		t.p2pCommunication.BroadcastMsgChan,
-		&t.stopChan,
-		&t.Status.CurrKeySign,
-		msgID,
-	)
-
-	keygenMsgChannel := keysignInstance.GetTssKeySignChannels()
-	t.p2pCommunication.SetSubscribe(p2p.TSSKeySignMsg, msgID, keygenMsgChannel)
-	t.p2pCommunication.SetSubscribe(p2p.TSSKeySignVerMsg, msgID, keygenMsgChannel)
-
-	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeySignMsg, msgID)
-	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeySignVerMsg, msgID)
-
 	localStateItem, err := t.stateManager.GetLocalState(req.PoolPubKey)
 	if err != nil {
 		return keysign.Response{}, fmt.Errorf("fail to get local keygen state: %w", err)
@@ -62,7 +46,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	if err != nil {
 		return keysign.Response{}, fmt.Errorf("fail to convert peer ID to pub keys: %w", err)
 	}
-	signatureData, err := keysignInstance.SignMessage(msgToSign, localStateItem, keys)
+	signatureData, err := t.keysignInstance.SignMessage(msgToSign, localStateItem, keys, msgID)
 	// the statistic of keygen only care about Tss it self, even if the following http response aborts,
 	// it still counted as a successful keygen as the Tss model runs successfully.
 	if err != nil {
@@ -73,7 +57,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	} else {
 		atomic.AddUint64(&t.Status.SucKeySign, 1)
 	}
-	blame := keysignInstance.GetTssCommonStruct().BlamePeers
+	blame := common.NoBlame
 
 	// this indicates we are not in this round keysign
 	if signatureData == nil && err == nil {

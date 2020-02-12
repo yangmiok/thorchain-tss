@@ -55,6 +55,7 @@ func (m *Messenger) handleStream(stream network.Stream) {
 	}()
 	remotePeer := stream.Conn().RemotePeer()
 	logger := m.logger.With().Str("remote-peer", remotePeer.String()).Logger()
+	logger.Info().Msg("received stream request")
 	l, err := ReadLength(stream)
 	if err != nil {
 		logger.Err(err).Msg("fail to read length")
@@ -99,6 +100,7 @@ func (m *Messenger) messagesToPeer(t *distributeTask) error {
 	if err != nil {
 		return err
 	}
+	m.logger.Info().Msgf("successfully open stream to %s", t.pId)
 	defer func() {
 		if err := stream.Close(); err != nil {
 			m.logger.Err(err).Msg("fail to close stream")

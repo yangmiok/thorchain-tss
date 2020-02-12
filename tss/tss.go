@@ -41,6 +41,7 @@ type TssServer struct {
 	partyCoordinator *p2p.PartyCoordinator
 	stateManager     storage.LocalStateManager
 	keygenInstance   *keygen.TssKeyGen
+	keysignInstance  *keysign.TssKeySign
 }
 
 // NewTss create a new instance of Tss
@@ -98,6 +99,10 @@ func NewTss(
 	if err != nil {
 		return nil, fmt.Errorf("fail to create keygen instance")
 	}
+	keysignInstance, err := keysign.NewTssKeySign(comm.GetHost())
+	if err != nil {
+		return nil, fmt.Errorf("fail to create keysign instance")
+	}
 	tssServer := TssServer{
 		conf:   conf,
 		logger: log.With().Str("module", "tss").Logger(),
@@ -113,6 +118,7 @@ func NewTss(
 		partyCoordinator: pc,
 		stateManager:     stateManager,
 		keygenInstance:   keygenInstance,
+		keysignInstance:  keysignInstance,
 	}
 
 	return &tssServer, nil
@@ -167,6 +173,7 @@ func (t *TssServer) Start(ctx context.Context) error {
 	log.Info().Msg("Starting the HTTP servers")
 	t.Status.Starttime = time.Now()
 	t.keygenInstance.Start()
+	t.keysignInstance.Start()
 	t.wg.Add(1)
 	go func() {
 		<-ctx.Done()
@@ -178,6 +185,7 @@ func (t *TssServer) Start(ctx context.Context) error {
 		}
 		t.partyCoordinator.Stop()
 		t.keygenInstance.Stop()
+		t.keysignInstance.Stop()
 	}()
 
 	go t.p2pCommunication.ProcessBroadcast()

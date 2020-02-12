@@ -25,7 +25,6 @@ type TssKeyGen struct {
 	localNodePubKey  string
 	preParams        *bkg.LocalPreParams
 	stopChan         chan struct{} // channel to indicate whether we should stop
-	localParty       *btss.PartyID
 	stateManager     storage.LocalStateManager
 	host             host.Host
 	messageValidator *p2p.MessageValidator
@@ -39,12 +38,12 @@ func NewTssKeyGen(localNodePubKey string,
 	host host.Host,
 	stateManager storage.LocalStateManager) (*TssKeyGen, error) {
 	tkeyGen := &TssKeyGen{
+		host:            host,
 		logger:          log.With().Str("module", "keyGen").Logger(),
 		localNodePubKey: localNodePubKey,
 		preParams:       preParam,
 		stopChan:        make(chan struct{}),
 		lock:            &sync.Mutex{},
-		localParty:      nil,
 		stateManager:    stateManager,
 	}
 	messageValidator, err := p2p.NewMessageValidator(host, tkeyGen.onMessageCallback, p2p.KeygenVerifyProtocol)
@@ -60,25 +59,27 @@ func NewTssKeyGen(localNodePubKey string,
 	return tkeyGen, nil
 }
 
-func (tKeyGen *TssKeyGen) onMessageReceived(buf []byte, remotePeer peer.ID) {
+func (kg *TssKeyGen) onMessageReceived(buf []byte, remotePeer peer.ID) {
 	var msg p2p.WireMessage
 	if err := json.Unmarshal(buf, &msg); err != nil {
-		tKeyGen.logger.Error().Err(err).Msg("fail to unmarshal keygen message")
+		kg.logger.Error().Err(err).Msg("fail to unmarshal keygen message")
 		return
 	}
-	peers := tKeyGen.getPeers([]peer.ID{
+	kg.logger.Info().Msgf("received message from:%s", remotePeer)
+	peers := kg.getPeers([]peer.ID{
 		remotePeer,
-		tKeyGen.host.ID(),
+		kg.host.ID(),
 	})
-	if err := tKeyGen.messageValidator.VerifyMessage(&msg, peers); err != nil {
-		tKeyGen.logger.Err(err).Msg("fail to verify message")
+	if err := kg.messageValidator.VerifyMessage(&msg, peers); err != nil {
+		kg.logger.Err(err).Msg("fail to verify message")
 	}
 }
-func (tKeyGen *TssKeyGen) getPeers(exclude []peer.ID) []peer.ID {
-	tKeyGen.lock.Lock()
-	defer tKeyGen.lock.Unlock()
+
+func (kg *TssKeyGen) getPeers(exclude []peer.ID) []peer.ID {
+	kg.lock.Lock()
+	defer kg.lock.Unlock()
 	var output []peer.ID
-	for _, item := range tKeyGen.partyInfo.PartiesID {
+	for _, item := range kg.partyInfo.PartiesID {
 		shouldExclude := false
 		for _, p := range exclude {
 			if item.Moniker == p.String() {
@@ -89,7 +90,7 @@ func (tKeyGen *TssKeyGen) getPeers(exclude []peer.ID) []peer.ID {
 		if !shouldExclude {
 			id, err := peer.IDB58Decode(item.Moniker)
 			if err != nil {
-				tKeyGen.logger.Err(err).Msg("fail to decode peer id")
+				kg.logger.Err(err).Msg("fail to decode peer id")
 				return output
 			}
 			output = append(output, id)
@@ -97,16 +98,16 @@ func (tKeyGen *TssKeyGen) getPeers(exclude []peer.ID) []peer.ID {
 	}
 	return output
 }
-func (tKeyGen *TssKeyGen) getPeersFromParty(parties []*btss.PartyID) []peer.ID {
-	tKeyGen.lock.Lock()
-	defer tKeyGen.lock.Unlock()
+func (kg *TssKeyGen) getPeersFromParty(parties []*btss.PartyID) []peer.ID {
+	kg.lock.Lock()
+	defer kg.lock.Unlock()
 	var output []peer.ID
-	for _, item := range tKeyGen.partyInfo.PartiesID {
+	for _, item := range kg.partyInfo.PartiesID {
 		for _, p := range parties {
 			if p.Id == item.Id && p.Moniker == item.Moniker {
 				id, err := peer.IDB58Decode(item.Moniker)
 				if err != nil {
-					tKeyGen.logger.Err(err).Msg("fail to decode peer id")
+					kg.logger.Err(err).Msg("fail to decode peer id")
 					return output
 				}
 				output = append(output, id)
@@ -116,24 +117,25 @@ func (tKeyGen *TssKeyGen) getPeersFromParty(parties []*btss.PartyID) []peer.ID {
 	return output
 }
 
-func (tKeyGen *TssKeyGen) onMessageCallback(msg *p2p.WireMessage) {
-	tKeyGen.lock.Lock()
-	defer tKeyGen.lock.Unlock()
-	if _, err := tKeyGen.partyInfo.Party.UpdateFromBytes(msg.Message, msg.Routing.From, msg.Routing.IsBroadcast); err != nil {
-		tKeyGen.logger.Error().Err(err).Msg("fail to update local party")
+func (kg *TssKeyGen) onMessageCallback(msg *p2p.WireMessage) {
+	kg.lock.Lock()
+	defer kg.lock.Unlock()
+	kg.logger.Info().Msgf("confirmed message:%+v", msg)
+	if _, err := kg.partyInfo.Party.UpdateFromBytes(msg.Message, msg.Routing.From, msg.Routing.IsBroadcast); err != nil {
+		kg.logger.Error().Err(err).Msg("fail to update local party")
 		// get who to blame
 	}
 }
 
 // GenerateNewKey create a new key
-func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq Request, messageID string) (*crypto.ECPoint, error) {
-	partiesID, localPartyID, err := common.GetParties(keygenReq.Keys, tKeyGen.localNodePubKey)
+func (kg *TssKeyGen) GenerateNewKey(keygenReq Request, messageID string) (*crypto.ECPoint, error) {
+	partiesID, localPartyID, err := common.GetParties(keygenReq.Keys, kg.localNodePubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get keygen parties: %w", err)
 	}
 	keyGenLocalStateItem := storage.KeygenLocalState{
 		ParticipantKeys: keygenReq.Keys,
-		LocalPartyKey:   tKeyGen.localNodePubKey,
+		LocalPartyKey:   kg.localNodePubKey,
 	}
 
 	threshold, err := common.GetThreshold(len(partiesID))
@@ -145,58 +147,58 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq Request, messageID string) (*
 	outCh := make(chan btss.Message, len(partiesID))
 	endCh := make(chan bkg.LocalPartySaveData, len(partiesID))
 	errChan := make(chan struct{})
-	if tKeyGen.preParams == nil {
-		tKeyGen.logger.Error().Err(err).Msg("error, empty pre-parameters")
+	if kg.preParams == nil {
+		kg.logger.Error().Err(err).Msg("error, empty pre-parameters")
 		return nil, errors.New("error, empty pre-parameters")
 	}
-	keyGenParty := bkg.NewLocalParty(params, outCh, endCh, *tKeyGen.preParams)
-	tKeyGen.setPartyInfo(&common.PartyInfo{
+	keyGenParty := bkg.NewLocalParty(params, outCh, endCh, *kg.preParams)
+	kg.setPartyInfo(&common.PartyInfo{
 		Party:     keyGenParty,
 		PartiesID: partiesID,
 	})
 
 	// start keygen
 	go func() {
-		defer tKeyGen.logger.Info().Msg("keyGenParty finished")
+		defer kg.logger.Info().Msg("keyGenParty finished")
 		if err := keyGenParty.Start(); nil != err {
-			tKeyGen.logger.Error().Err(err).Msg("fail to start keygen party")
+			kg.logger.Error().Err(err).Msg("fail to start keygen party")
 			close(errChan)
 		}
 	}()
 
-	r, err := tKeyGen.processKeyGen(errChan, outCh, endCh, keyGenLocalStateItem, messageID)
+	r, err := kg.processKeyGen(errChan, outCh, endCh, keyGenLocalStateItem, messageID)
 	return r, err
 }
 
-func (tKeyGen *TssKeyGen) setPartyInfo(partyInfo *common.PartyInfo) {
-	tKeyGen.lock.Lock()
-	defer tKeyGen.lock.Unlock()
-	tKeyGen.partyInfo = partyInfo
+func (kg *TssKeyGen) setPartyInfo(partyInfo *common.PartyInfo) {
+	kg.lock.Lock()
+	defer kg.lock.Unlock()
+	kg.partyInfo = partyInfo
 }
 
 // TODO make keygen timeout calculate based on the number of parties
-func (tKeyGen *TssKeyGen) getKeygenTimeout() time.Duration {
+func (kg *TssKeyGen) getKeygenTimeout() time.Duration {
 	return time.Minute * 5
 }
 
-func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
+func (kg *TssKeyGen) processKeyGen(errChan chan struct{},
 	outCh <-chan btss.Message,
 	endCh <-chan bkg.LocalPartySaveData,
 	keyGenLocalStateItem storage.KeygenLocalState, messageID string) (*crypto.ECPoint, error) {
-	defer tKeyGen.logger.Info().Msg("finished keygen process")
-	tKeyGen.logger.Info().Msg("start to read messages from local party")
-	keyGenTimeout := tKeyGen.getKeygenTimeout()
+	defer kg.logger.Info().Msg("finished keygen process")
+	kg.logger.Info().Msg("start to read messages from local party")
+	keyGenTimeout := kg.getKeygenTimeout()
 	for {
 		select {
 		case <-errChan: // when keyGenParty return
-			tKeyGen.logger.Error().Msg("key gen failed")
+			kg.logger.Error().Msg("key gen failed")
 			return nil, errors.New("error channel closed fail to start local party")
-		case <-tKeyGen.stopChan: // when TSS processor receive signal to quit
+		case <-kg.stopChan: // when TSS processor receive signal to quit
 			return nil, errors.New("received exit signal")
 
 		case <-time.After(keyGenTimeout):
 			// we bail out after KeyGenTimeoutSeconds
-			tKeyGen.logger.Error().Msgf("fail to generate message with %s", keyGenTimeout)
+			kg.logger.Error().Msgf("fail to generate message with %s", keyGenTimeout)
 			// tssCommonStruct := tKeyGen.GetTssCommonStruct()
 			// localCachedItems := tssCommonStruct.TryGetAllLocalCached()
 			// blamePeers, err := tssCommonStruct.TssTimeoutBlame(localCachedItems)
@@ -209,7 +211,7 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			return nil, common.ErrTssTimeOut
 
 		case msg := <-outCh:
-			tKeyGen.logger.Debug().Msgf(">>>>>>>>>>msg: %s", msg.String())
+			kg.logger.Debug().Msgf(">>>>>>>>>>msg: %s", msg.String())
 			// for the sake of performance, we do not lock the status update
 			// we report a rough status of current round
 			buf, r, err := msg.WireBytes()
@@ -228,24 +230,24 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 				return nil, fmt.Errorf("fail to marshal wire message: %w", err)
 			}
 			if r.To == nil && r.IsBroadcast {
-				peers := tKeyGen.getPeers([]peer.ID{
-					tKeyGen.host.ID(),
+				peers := kg.getPeers([]peer.ID{
+					kg.host.ID(),
 				})
-				tKeyGen.messenger.Send(jsonBuf, peers)
+				kg.messenger.Send(jsonBuf, peers)
 				continue
 			}
-			peers := tKeyGen.getPeersFromParty(r.To)
-			tKeyGen.messenger.Send(jsonBuf, peers)
+			peers := kg.getPeersFromParty(r.To)
+			kg.messenger.Send(jsonBuf, peers)
 
 		case msg := <-endCh:
-			tKeyGen.logger.Debug().Msgf("keygen finished successfully: %s", msg.ECDSAPub.Y().String())
+			kg.logger.Debug().Msgf("keygen finished successfully: %s", msg.ECDSAPub.Y().String())
 			pubKey, _, err := common.GetTssPubKey(msg.ECDSAPub)
 			if err != nil {
 				return nil, fmt.Errorf("fail to get thorchain pubkey: %w", err)
 			}
 			keyGenLocalStateItem.LocalData = msg
 			keyGenLocalStateItem.PubKey = pubKey
-			if err := tKeyGen.stateManager.SaveLocalState(keyGenLocalStateItem); err != nil {
+			if err := kg.stateManager.SaveLocalState(keyGenLocalStateItem); err != nil {
 				return nil, fmt.Errorf("fail to save keygen result to storage: %w", err)
 			}
 
@@ -253,11 +255,13 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 		}
 	}
 }
-func (tKeyGen *TssKeyGen) Start() {
-	tKeyGen.messenger.Start()
-	tKeyGen.messageValidator.Start()
+
+func (kg *TssKeyGen) Start() {
+	kg.messenger.Start()
+	kg.messageValidator.Start()
 }
-func (tKeyGen *TssKeyGen) Stop() {
-	tKeyGen.messenger.Stop()
-	tKeyGen.messageValidator.Stop()
+func (kg *TssKeyGen) Stop() {
+	kg.messenger.Stop()
+	kg.messageValidator.Stop()
+	close(kg.stopChan)
 }
