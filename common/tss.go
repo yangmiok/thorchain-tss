@@ -26,9 +26,9 @@ import (
 
 // PartyInfo the information used by tss key gen and key sign
 type PartyInfo struct {
-	MessageID  string
-	Party      btss.Party
-	PartyIDMap map[string]*btss.PartyID
+	MessageID string
+	Party     btss.Party
+	PartiesID []*btss.PartyID
 }
 
 type TssCommon struct {
@@ -76,11 +76,15 @@ func GetParties(keys []string, localPartyKey string) ([]*btss.PartyID, *btss.Par
 		}
 		secpPk := pk.(secp256k1.PubKeySecp256k1)
 		key := new(big.Int).SetBytes(secpPk[:])
+		peerID, err := GetPeerIDFromSecp256PubKey(secpPk)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to get peer id from pub key")
+		}
 		// Set up the parameters
 		// Note: The `id` and `moniker` fields are for convenience to allow you to easily track participants.
 		// The `id` should be a unique string representing this party in the network and `moniker` can be anything (even left blank).
 		// The `uniqueKey` is a unique identifying key for this peer (such as its p2p public key) as a big.Int.
-		partyID := btss.NewPartyID(strconv.Itoa(idx), "", key)
+		partyID := btss.NewPartyID(strconv.Itoa(idx), peerID.String(), key)
 		if item == localPartyKey {
 			localPartyID = partyID
 		}

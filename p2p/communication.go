@@ -24,10 +24,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var joinPartyProtocol protocol.ID = "/p2p/join-party"
-
-// TSSProtocolID protocol id used for tss
-var TSSProtocolID protocol.ID = "/p2p/tss"
+var (
+	joinPartyProtocol protocol.ID = "/p2p/join-party"
+	// KeygenVerifyProtocol the protocol we used to send keygen verify messages
+	KeygenVerifyProtocol protocol.ID = "/p2p/keygen-verify"
+	// KeysignVerifyProtocol the protocol we used send keysign verify messages
+	KeysignVerifyProtocol protocol.ID = "/p2p/keysign-verify"
+	KeygenProtocol        protocol.ID = "/p2p/keygen"
+	KeysignProtocol       protocol.ID = "/p2p/keysign"
+	// TSSProtocolID protocol id used for tss
+	TSSProtocolID protocol.ID = "/p2p/tss"
+)
 
 const (
 

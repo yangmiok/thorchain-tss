@@ -5,7 +5,6 @@ import (
 
 	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/keygen"
-	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
 
 func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
@@ -19,28 +18,10 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 		return keygen.Response{}, err
 	}
 
-	keygenInstance := keygen.NewTssKeyGen(
-		t.p2pCommunication.GetLocalPeerID(),
-		t.conf,
-		t.localNodePubKey,
-		t.p2pCommunication.BroadcastMsgChan,
-		&t.stopChan,
-		t.preParams,
-		&t.Status.CurrKeyGen,
-		msgID,
-		t.stateManager)
-
-	keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
-	t.p2pCommunication.SetSubscribe(p2p.TSSKeyGenMsg, msgID, keygenMsgChannel)
-	t.p2pCommunication.SetSubscribe(p2p.TSSKeyGenVerMsg, msgID, keygenMsgChannel)
-
-	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeyGenMsg, msgID)
-	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeyGenVerMsg, msgID)
-
 	// the statistic of keygen only care about Tss it self, even if the
 	// following http response aborts, it still counted as a successful keygen
 	// as the Tss model runs successfully.
-	k, err := keygenInstance.GenerateNewKey(req)
+	k, err := t.keygenInstance.GenerateNewKey(req, msgID)
 	if err != nil {
 		t.logger.Error().Err(err).Msg("err in keygen")
 		atomic.AddUint64(&t.Status.FailedKeyGen, 1)
@@ -58,6 +39,6 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 		newPubKey,
 		addr.String(),
 		status,
-		keygenInstance.GetTssCommonStruct().BlamePeers,
+		common.NoBlame,
 	), nil
 }

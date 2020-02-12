@@ -64,6 +64,7 @@ type WireMessage struct {
 	Routing   *btss.MessageRouting `json:"routing"`
 	RoundInfo string               `json:"round_info"`
 	Message   []byte               `json:"message"`
+	MessageID string               `json:"message_id"`
 }
 
 // GetCacheKey return the key we used to cache it locally

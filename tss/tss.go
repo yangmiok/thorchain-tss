@@ -40,6 +40,7 @@ type TssServer struct {
 	homeBase         string
 	partyCoordinator *p2p.PartyCoordinator
 	stateManager     storage.LocalStateManager
+	keygenInstance   *keygen.TssKeyGen
 }
 
 // NewTss create a new instance of Tss
@@ -93,6 +94,10 @@ func NewTss(
 	if err != nil {
 		return nil, fmt.Errorf("fail to create file state manager")
 	}
+	keygenInstance, err := keygen.NewTssKeyGen(pubKey, preParams, comm.GetHost(), stateManager)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create keygen instance")
+	}
 	tssServer := TssServer{
 		conf:   conf,
 		logger: log.With().Str("module", "tss").Logger(),
@@ -107,6 +112,7 @@ func NewTss(
 		stopChan:         make(chan struct{}),
 		partyCoordinator: pc,
 		stateManager:     stateManager,
+		keygenInstance:   keygenInstance,
 	}
 
 	return &tssServer, nil
@@ -160,6 +166,7 @@ func (t *TssServer) StartHttpServers() error {
 func (t *TssServer) Start(ctx context.Context) error {
 	log.Info().Msg("Starting the HTTP servers")
 	t.Status.Starttime = time.Now()
+	t.keygenInstance.Start()
 	t.wg.Add(1)
 	go func() {
 		<-ctx.Done()
@@ -170,6 +177,7 @@ func (t *TssServer) Start(ctx context.Context) error {
 			t.logger.Error().Msgf("error in shutdown the p2p server")
 		}
 		t.partyCoordinator.Stop()
+		t.keygenInstance.Stop()
 	}()
 
 	go t.p2pCommunication.ProcessBroadcast()
