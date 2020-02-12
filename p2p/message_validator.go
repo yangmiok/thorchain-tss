@@ -2,6 +2,8 @@ package p2p
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -14,7 +16,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/messages"
 )
 
@@ -23,8 +24,9 @@ const (
 )
 
 var (
-	// Keygen
-	KeygenVerifyProtocol  protocol.ID = "/p2p/keygen-verify"
+	// KeygenVerifyProtocol the protocol we used to send keygen verify messages
+	KeygenVerifyProtocol protocol.ID = "/p2p/keygen-verify"
+	// KeysignVerifyProtocol the protocol we used send keysign verify messages
 	KeysignVerifyProtocol protocol.ID = "/p2p/keysign-verify"
 )
 
@@ -79,6 +81,7 @@ func (mv *MessageValidator) Start() {
 func (mv *MessageValidator) Stop() {
 	close(mv.stopChan)
 	mv.wg.Wait()
+	mv.host.RemoveStreamHandler(mv.currentProtocolID)
 }
 
 func (mv *MessageValidator) handleStream(stream network.Stream) {
@@ -189,18 +192,27 @@ func (mv *MessageValidator) sendConfirmMessagesToPeer(t *task) error {
 	return nil
 }
 
+// msgToHashString , this is required to be here for now, to avoid import cycle
+func msgToHashString(msg []byte) (string, error) {
+	h := sha256.New()
+	_, err := h.Write(msg)
+	if err != nil {
+		return "", fmt.Errorf("fail to caculate sha256 hash: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
 // VerifyMessage add a message to local cache, and send messages to all the peers
-func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) error {
+func (mv *MessageValidator) VerifyMessage(msg *WireMessage, messageID string, peers []peer.ID) error {
 	mv.lock.Lock()
 	defer mv.lock.Unlock()
-	hash, err := common.MsgToHashString(msg.Message)
+	hash, err := msgToHashString(msg.Message)
 	if err != nil {
 		return fmt.Errorf("fail to generate hash from msg: %w", err)
 	}
 
-	key := msg.GetCacheKey()
+	key := fmt.Sprintf("%s-%s-%s", messageID, msg.Routing.From.Id, msg.RoundInfo)
 	sm := mv.getStandbyMessage(key)
-
 	if sm == nil {
 		// first one to receive the messsage
 		sm := NewStandbyMessage(msg, hash, len(peers)+1)
@@ -211,10 +223,29 @@ func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) err
 	if sm.Msg == nil {
 		sm.Msg = msg
 	}
+	mv.sendMessagesToPeers(&messages.ConfirmMessage{
+		Key:  key,
+		Hash: hash,
+	}, peers)
+	// fan out the messages
 	sm.UpdateConfirmList(mv.host.ID(), hash)
 	if sm.Threshold != -1 && sm.Threshold == sm.TotalConfirmed() {
 		mv.onMessageConfirmedCallback(sm.Msg)
 	}
 	mv.removeStandbyMessage(key)
 	return nil
+}
+func (mv *MessageValidator) sendMessagesToPeers(msg *messages.ConfirmMessage, peers []peer.ID) {
+	for _, p := range peers {
+		t := &task{
+			msg: msg,
+			pId: p,
+		}
+		select {
+		case <-mv.stopChan:
+			// get stop signal , let's bail out now
+			return
+		case mv.tasksChan <- t:
+		}
+	}
 }

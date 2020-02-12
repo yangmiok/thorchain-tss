@@ -58,7 +58,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	if result.Type != messages.JoinPartyResponse_Success {
 		return keysign.Response{}, fmt.Errorf("fail to form keysign party: %s", result.Type)
 	}
-	keys, err := GetPubKeysFromPeerIDs(result.PeerID)
+	keys, err := GetPubKeysFromPeerIDs(result.PeerIDs)
 	if err != nil {
 		return keysign.Response{}, fmt.Errorf("fail to convert peer ID to pub keys: %w", err)
 	}
@@ -114,7 +114,7 @@ func (t *TssServer) joinParty(msgID string, messageToSign []byte, localStateItem
 	joinPartyReq := &messages.JoinPartyRequest{
 		ID:        msgID,
 		Threshold: int32(threshold + 1),
-		PeerID:    peerIDs,
+		PeerIDs:   peerIDs,
 	}
 	return t.partyCoordinator.JoinParty(leaderPeerID, joinPartyReq)
 }

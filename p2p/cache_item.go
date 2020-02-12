@@ -42,6 +42,7 @@ func (l *StandbyMessage) TotalConfirmed() int {
 	return len(l.ConfirmedList)
 }
 
+// GetPeers is return the peers that had confirmed.
 func (l *StandbyMessage) GetPeers() []peer.ID {
 	peers := make([]peer.ID, 0, len(l.ConfirmedList))
 	l.lock.Lock()

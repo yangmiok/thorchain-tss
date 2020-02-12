@@ -26,6 +26,7 @@ import (
 
 // PartyInfo the information used by tss key gen and key sign
 type PartyInfo struct {
+	MessageID  string
 	Party      btss.Party
 	PartyIDMap map[string]*btss.PartyID
 }
