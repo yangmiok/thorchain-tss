@@ -37,6 +37,7 @@ func NewTssKeyGen(localNodePubKey string,
 	preParam *bkg.LocalPreParams,
 	host host.Host,
 	stateManager storage.LocalStateManager) (*TssKeyGen, error) {
+
 	tkeyGen := &TssKeyGen{
 		host:            host,
 		logger:          log.With().Str("module", "keyGen").Logger(),
@@ -46,7 +47,7 @@ func NewTssKeyGen(localNodePubKey string,
 		lock:            &sync.Mutex{},
 		stateManager:    stateManager,
 	}
-	messageValidator, err := p2p.NewMessageValidator(host, tkeyGen.onMessageCallback, p2p.KeygenVerifyProtocol)
+	messageValidator, err := p2p.NewMessageValidator(host, tkeyGen.onMessageValidated, p2p.KeygenVerifyProtocol)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create message validator")
 	}
@@ -66,62 +67,40 @@ func (kg *TssKeyGen) onMessageReceived(buf []byte, remotePeer peer.ID) {
 		return
 	}
 	kg.logger.Info().Msgf("received message from:%s", remotePeer)
-	peers := kg.getPeers([]peer.ID{
+	pi := kg.getPartyInfo()
+	if pi == nil {
+		kg.logger.Info().Msgf("local party is not ready yet, we could only leave a message")
+		kg.messageValidator.Park(&msg, remotePeer)
+		return
+	}
+	kg.validateMessage(&msg, remotePeer)
+}
+
+func (kg *TssKeyGen) validateMessage(msg *p2p.WireMessage, remotePeer peer.ID) {
+	pi := kg.getPartyInfo()
+	if nil == pi {
+		return
+	}
+	peers, err := pi.GetPeers([]peer.ID{
 		remotePeer,
 		kg.host.ID(),
 	})
-	if err := kg.messageValidator.VerifyMessage(&msg, peers); err != nil {
+	if err != nil {
+		kg.logger.Err(err).Msg("fail to get peers")
+		return
+	}
+	if err := kg.messageValidator.VerifyMessage(msg, peers); err != nil {
 		kg.logger.Err(err).Msg("fail to verify message")
 	}
 }
 
-func (kg *TssKeyGen) getPeers(exclude []peer.ID) []peer.ID {
-	kg.lock.Lock()
-	defer kg.lock.Unlock()
-	var output []peer.ID
-	for _, item := range kg.partyInfo.PartiesID {
-		shouldExclude := false
-		for _, p := range exclude {
-			if item.Moniker == p.String() {
-				shouldExclude = true
-				break
-			}
-		}
-		if !shouldExclude {
-			id, err := peer.IDB58Decode(item.Moniker)
-			if err != nil {
-				kg.logger.Err(err).Msg("fail to decode peer id")
-				return output
-			}
-			output = append(output, id)
-		}
-	}
-	return output
-}
-func (kg *TssKeyGen) getPeersFromParty(parties []*btss.PartyID) []peer.ID {
-	kg.lock.Lock()
-	defer kg.lock.Unlock()
-	var output []peer.ID
-	for _, item := range kg.partyInfo.PartiesID {
-		for _, p := range parties {
-			if p.Id == item.Id && p.Moniker == item.Moniker {
-				id, err := peer.IDB58Decode(item.Moniker)
-				if err != nil {
-					kg.logger.Err(err).Msg("fail to decode peer id")
-					return output
-				}
-				output = append(output, id)
-			}
-		}
-	}
-	return output
-}
-
-func (kg *TssKeyGen) onMessageCallback(msg *p2p.WireMessage) {
-	kg.lock.Lock()
-	defer kg.lock.Unlock()
-	kg.logger.Info().Msgf("confirmed message:%+v", msg)
-	if _, err := kg.partyInfo.Party.UpdateFromBytes(msg.Message, msg.Routing.From, msg.Routing.IsBroadcast); err != nil {
+func (kg *TssKeyGen) onMessageValidated(msg *p2p.WireMessage) {
+	pi := kg.getPartyInfo()
+	kg.logger.Info().
+		Str("message-id", msg.MessageID).
+		Str("routing", msg.RoundInfo).
+		Msg("message validated")
+	if _, err := pi.Party.UpdateFromBytes(msg.Message, msg.Routing.From, msg.Routing.IsBroadcast); err != nil {
 		kg.logger.Error().Err(err).Msg("fail to update local party")
 		// get who to blame
 	}
@@ -175,6 +154,11 @@ func (kg *TssKeyGen) setPartyInfo(partyInfo *common.PartyInfo) {
 	defer kg.lock.Unlock()
 	kg.partyInfo = partyInfo
 }
+func (kg *TssKeyGen) getPartyInfo() *common.PartyInfo {
+	kg.lock.Lock()
+	defer kg.lock.Unlock()
+	return kg.partyInfo
+}
 
 // TODO make keygen timeout calculate based on the number of parties
 func (kg *TssKeyGen) getKeygenTimeout() time.Duration {
@@ -184,30 +168,21 @@ func (kg *TssKeyGen) getKeygenTimeout() time.Duration {
 func (kg *TssKeyGen) processKeyGen(errChan chan struct{},
 	outCh <-chan btss.Message,
 	endCh <-chan bkg.LocalPartySaveData,
-	keyGenLocalStateItem storage.KeygenLocalState, messageID string) (*crypto.ECPoint, error) {
+	keyGenLocalStateItem storage.KeygenLocalState,
+	messageID string) (*crypto.ECPoint, error) {
 	defer kg.logger.Info().Msg("finished keygen process")
 	kg.logger.Info().Msg("start to read messages from local party")
 	keyGenTimeout := kg.getKeygenTimeout()
 	for {
 		select {
 		case <-errChan: // when keyGenParty return
-			kg.logger.Error().Msg("key gen failed")
-			return nil, errors.New("error channel closed fail to start local party")
+			return nil, errors.New("keygen party fail to start")
 		case <-kg.stopChan: // when TSS processor receive signal to quit
 			return nil, errors.New("received exit signal")
 
 		case <-time.After(keyGenTimeout):
-			// we bail out after KeyGenTimeoutSeconds
+
 			kg.logger.Error().Msgf("fail to generate message with %s", keyGenTimeout)
-			// tssCommonStruct := tKeyGen.GetTssCommonStruct()
-			// localCachedItems := tssCommonStruct.TryGetAllLocalCached()
-			// blamePeers, err := tssCommonStruct.TssTimeoutBlame(localCachedItems)
-			// if err != nil {
-			// 	tKeyGen.logger.Error().Err(err).Msg("fail to get the blamed peers")
-			// 	tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, nil)
-			// 	return nil, fmt.Errorf("fail to get the blamed peers %w", common.ErrTssTimeOut)
-			// }
-			// tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blamePeers)
 			return nil, common.ErrTssTimeOut
 
 		case msg := <-outCh:
@@ -229,15 +204,26 @@ func (kg *TssKeyGen) processKeyGen(errChan chan struct{},
 			if err != nil {
 				return nil, fmt.Errorf("fail to marshal wire message: %w", err)
 			}
+			pi := kg.getPartyInfo()
+			peersAll, err := pi.GetPeers([]peer.ID{
+				kg.host.ID(),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("fail to get peers: %w", err)
+			}
 			if r.To == nil && r.IsBroadcast {
-				peers := kg.getPeers([]peer.ID{
-					kg.host.ID(),
-				})
-				kg.messenger.Send(jsonBuf, peers)
+				kg.messenger.Send(jsonBuf, peersAll)
 				continue
 			}
-			peers := kg.getPeersFromParty(r.To)
-			kg.messenger.Send(jsonBuf, peers)
+			peersTo, err := pi.GetPeersFromParty(r.To)
+			if err != nil {
+				return nil, fmt.Errorf("fail to get peers: %w", err)
+			}
+
+			kg.messenger.Send(jsonBuf, peersTo)
+			if err := kg.messageValidator.VerifyParkedMessages(messageID, peersAll); err != nil {
+				return nil, fmt.Errorf("fail to verify parked messages:%w", err)
+			}
 
 		case msg := <-endCh:
 			kg.logger.Debug().Msgf("keygen finished successfully: %s", msg.ECDSAPub.Y().String())

@@ -188,7 +188,6 @@ func (t *TssServer) Start(ctx context.Context) error {
 		t.keysignInstance.Stop()
 	}()
 
-	go t.p2pCommunication.ProcessBroadcast()
 	t.partyCoordinator.Start()
 	err := t.StartHttpServers()
 	if err != nil {

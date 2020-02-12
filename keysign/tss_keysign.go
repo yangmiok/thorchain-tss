@@ -31,13 +31,14 @@ type TssKeySign struct {
 }
 
 func NewTssKeySign(host host.Host) (*TssKeySign, error) {
+
 	tKeySign := &TssKeySign{
 		logger:   log.With().Str("module", "keysign").Logger(),
 		host:     host,
 		lock:     &sync.Mutex{},
 		stopChan: make(chan struct{}),
 	}
-	messageValidator, err := p2p.NewMessageValidator(host, tKeySign.onMessageCallback, p2p.KeysignVerifyProtocol)
+	messageValidator, err := p2p.NewMessageValidator(host, tKeySign.onMessageValidated, p2p.KeysignVerifyProtocol)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create message validator")
 	}
@@ -55,64 +56,40 @@ func (ks *TssKeySign) onMessageReceived(buf []byte, remotePeer peer.ID) {
 		ks.logger.Error().Err(err).Msg("fail to unmarshal keygen message")
 		return
 	}
-	peers := ks.getPeers([]peer.ID{
+	pi := ks.getPartyInfo()
+	if pi == nil {
+		ks.logger.Info().Msgf("local party is not ready yet, we could only leave a message")
+		ks.messageValidator.Park(&msg, remotePeer)
+		return
+	}
+	ks.validateMessage(&msg, remotePeer)
+}
+
+func (ks *TssKeySign) validateMessage(msg *p2p.WireMessage, remotePeer peer.ID) {
+	pi := ks.getPartyInfo()
+	if nil == pi {
+		return
+	}
+	peers, err := pi.GetPeers([]peer.ID{
 		remotePeer,
 		ks.host.ID(),
 	})
-	if err := ks.messageValidator.VerifyMessage(&msg, peers); err != nil {
+	if err != nil {
+		ks.logger.Err(err).Msg("fail to get peers")
+		return
+	}
+	if err := ks.messageValidator.VerifyMessage(msg, peers); err != nil {
 		ks.logger.Err(err).Msg("fail to verify message")
 	}
 }
 
-func (ks *TssKeySign) onMessageCallback(msg *p2p.WireMessage) {
+func (ks *TssKeySign) onMessageValidated(msg *p2p.WireMessage) {
 	ks.lock.Lock()
 	defer ks.lock.Unlock()
 	if _, err := ks.partyInfo.Party.UpdateFromBytes(msg.Message, msg.Routing.From, msg.Routing.IsBroadcast); err != nil {
 		ks.logger.Error().Err(err).Msg("fail to update local party")
 		// get who to blame
 	}
-}
-
-func (ks *TssKeySign) getPeers(exclude []peer.ID) []peer.ID {
-	ks.lock.Lock()
-	defer ks.lock.Unlock()
-	var output []peer.ID
-	for _, item := range ks.partyInfo.PartiesID {
-		shouldExclude := false
-		for _, p := range exclude {
-			if item.Moniker == p.String() {
-				shouldExclude = true
-				break
-			}
-		}
-		if !shouldExclude {
-			id, err := peer.IDB58Decode(item.Moniker)
-			if err != nil {
-				ks.logger.Err(err).Msg("fail to decode peer id")
-				return output
-			}
-			output = append(output, id)
-		}
-	}
-	return output
-}
-func (ks *TssKeySign) getPeersFromParty(parties []*btss.PartyID) []peer.ID {
-	ks.lock.Lock()
-	defer ks.lock.Unlock()
-	var output []peer.ID
-	for _, item := range ks.partyInfo.PartiesID {
-		for _, p := range parties {
-			if p.Id == item.Id && p.Moniker == item.Moniker {
-				id, err := peer.IDB58Decode(item.Moniker)
-				if err != nil {
-					ks.logger.Err(err).Msg("fail to decode peer id")
-					return output
-				}
-				output = append(output, id)
-			}
-		}
-	}
-	return output
 }
 
 // signMessage
@@ -168,6 +145,11 @@ func (ks *TssKeySign) setPartyInfo(partyInfo *common.PartyInfo) {
 	defer ks.lock.Unlock()
 	ks.partyInfo = partyInfo
 }
+func (ks *TssKeySign) getPartyInfo() *common.PartyInfo {
+	ks.lock.Lock()
+	defer ks.lock.Unlock()
+	return ks.partyInfo
+}
 
 // TODO make keygen timeout calculate based on the number of parties
 func (ks *TssKeySign) getKeysignTimeout() time.Duration {
@@ -217,15 +199,25 @@ func (ks *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan btss.Me
 			if err != nil {
 				return nil, fmt.Errorf("fail to marshal wire message: %w", err)
 			}
+			pi := ks.getPartyInfo()
+			peersAll, err := pi.GetPeers([]peer.ID{
+				ks.host.ID(),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("fail to get peers: %w", err)
+			}
 			if r.To == nil && r.IsBroadcast {
-				peers := ks.getPeers([]peer.ID{
-					ks.host.ID(),
-				})
-				ks.messenger.Send(jsonBuf, peers)
+				ks.messenger.Send(jsonBuf, peersAll)
 				continue
 			}
-			peers := ks.getPeersFromParty(r.To)
-			ks.messenger.Send(jsonBuf, peers)
+			peersTo, err := pi.GetPeersFromParty(r.To)
+			if err != nil {
+				return nil, fmt.Errorf("fail to get peers: %w", err)
+			}
+			ks.messenger.Send(jsonBuf, peersTo)
+			if err := ks.messageValidator.VerifyParkedMessages(messageID, peersAll); err != nil {
+				return nil, fmt.Errorf("fail to verify parked messages:%w", err)
+			}
 		case msg := <-endCh:
 			ks.logger.Debug().Msg("we have done the key sign")
 			return &msg, nil

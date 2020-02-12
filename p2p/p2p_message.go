@@ -1,8 +1,6 @@
 package p2p
 
 import (
-	"fmt"
-
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
@@ -65,9 +63,4 @@ type WireMessage struct {
 	RoundInfo string               `json:"round_info"`
 	Message   []byte               `json:"message"`
 	MessageID string               `json:"message_id"`
-}
-
-// GetCacheKey return the key we used to cache it locally
-func (m *WireMessage) GetCacheKey() string {
-	return fmt.Sprintf("%s-%s", m.Routing.From.Id, m.RoundInfo)
 }

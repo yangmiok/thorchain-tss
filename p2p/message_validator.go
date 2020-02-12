@@ -32,13 +32,17 @@ type MessageValidator struct {
 	lock                       *sync.Mutex
 	cache                      map[string]*StandbyMessage
 	onMessageConfirmedCallback MessageConfirmedHandler
+	messageBox                 MessageBox
 }
 
 // NewMessageValidator create a new message
 func NewMessageValidator(host host.Host,
 	confirmedCallback MessageConfirmedHandler,
 	protocol protocol.ID) (*MessageValidator, error) {
-
+	messageBox, err := NewMessageBoxImp()
+	if err != nil {
+		return nil, fmt.Errorf("fail to create local in memory cache: %w", err)
+	}
 	mv := &MessageValidator{
 		logger:                     log.With().Str("module", "message_validator").Logger(),
 		host:                       host,
@@ -46,6 +50,7 @@ func NewMessageValidator(host host.Host,
 		cache:                      make(map[string]*StandbyMessage),
 		onMessageConfirmedCallback: confirmedCallback,
 		currentProtocolID:          protocol,
+		messageBox:                 messageBox,
 	}
 	messenger, err := NewMessenger(protocol, host, mv.onReceivedMessage)
 	if err != nil {
@@ -111,7 +116,6 @@ func msgToHashString(msg []byte) (string, error) {
 
 // VerifyMessage add a message to local cache, and send messages to all the peers
 func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) error {
-	mv.logger.Info().Msgf("+v", peers)
 	hash, err := msgToHashString(msg.Message)
 	if err != nil {
 		return fmt.Errorf("fail to generate hash from msg: %w", err)
@@ -143,6 +147,29 @@ func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) err
 	if sm.Threshold != -1 && sm.Threshold == sm.TotalConfirmed() {
 		mv.onMessageConfirmedCallback(sm.Msg)
 		mv.removeStandbyMessage(key)
+	}
+	return nil
+}
+
+// Park a message into MessageBox usually it means the local party is not ready
+func (mv *MessageValidator) Park(msg *WireMessage, remotePeer peer.ID) {
+	mv.messageBox.AddMessage(msg.MessageID, msg, remotePeer)
+}
+
+// VerifyParkedMessages when local party is ready , check whether they are messages left in the message box that can be verify now
+func (mv *MessageValidator) VerifyParkedMessages(messageID string, peers []peer.ID) error {
+	cachedMessages := mv.messageBox.GetMessages(messageID)
+	for _, item := range cachedMessages {
+		// exclude the node who originally send messages to us
+		var peerIDs []peer.ID
+		for _, p := range peers {
+			if p.String() != item.RemotePeer.String() {
+				peerIDs = append(peerIDs, p)
+			}
+		}
+		if err := mv.VerifyMessage(item.Message, peerIDs); err != nil {
+			return err
+		}
 	}
 	return nil
 }

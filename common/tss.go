@@ -18,13 +18,6 @@ import (
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 )
 
-// PartyInfo the information used by tss key gen and key sign
-type PartyInfo struct {
-	MessageID string
-	Party     btss.Party
-	PartiesID []*btss.PartyID
-}
-
 func GetParties(keys []string, localPartyKey string) ([]*btss.PartyID, *btss.PartyID, error) {
 	var localPartyID *btss.PartyID
 	var unSortedPartiesID []*btss.PartyID
