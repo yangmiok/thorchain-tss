@@ -217,7 +217,7 @@ func (ks *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan btss.Me
 			if r.To == nil && r.IsBroadcast {
 				ks.messenger.Send(jsonBuf, peersAll)
 			} else {
-				ks.logger.Info().Msg("##########none broadcast messages")
+				ks.logger.Debug().Msg("##########none broadcast messages")
 				peersTo, err := pi.GetPeersFromParty(r.To)
 				if err != nil {
 					return nil, fmt.Errorf("fail to get peers: %w", err)

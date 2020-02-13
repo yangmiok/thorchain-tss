@@ -60,7 +60,7 @@ func TestNewPartyCoordinator(t *testing.T) {
 	joinPartyReq := messages.JoinPartyRequest{
 		ID:        msgID,
 		Threshold: 3,
-		PeerID: []string{
+		PeerIDs: []string{
 			p1.String(), p2.String(), p3.String(),
 		},
 	}
