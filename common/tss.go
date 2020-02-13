@@ -1,8 +1,6 @@
 package common
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -56,15 +54,6 @@ func getPeerIDFromPartyID(partyID *btss.PartyID) (peer.ID, error) {
 	var pk secp256k1.PubKeySecp256k1
 	copy(pk[:], pkBytes)
 	return GetPeerIDFromSecp256PubKey(pk)
-}
-
-func BytesToHashString(msg []byte) (string, error) {
-	h := sha256.New()
-	_, err := h.Write(msg)
-	if err != nil {
-		return "", fmt.Errorf("fail to caculate sha256 hash: %w", err)
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 //

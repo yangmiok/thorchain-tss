@@ -29,22 +29,9 @@ var (
 )
 
 const (
-
-	// MaxPayload the maximum payload for a message
-	MaxPayload = 81920 // 80kb
-	// TimeoutReadWrite maximum time to wait on read and write
-	TimeoutReadWrite = time.Second * 10
-	// TimeoutBroadcast maximum time to wait for message broadcast
-	TimeoutBroadcast = time.Minute * 5
 	// TimeoutConnecting maximum time for wait for peers to connect
 	TimeoutConnecting = time.Minute * 1
 )
-
-// Message that get transfer across the wire
-type Message struct {
-	PeerID  peer.ID
-	Payload []byte
-}
 
 // Communication use p2p to broadcast messages among all the TSS nodes
 type Communication struct {
@@ -82,19 +69,6 @@ func (c *Communication) GetHost() host.Host {
 // GetLocalPeerID from p2p host
 func (c *Communication) GetLocalPeerID() string {
 	return c.host.ID().String()
-}
-
-func (c *Communication) shouldWeWriteToPeer(ai peer.AddrInfo, peers []peer.ID) bool {
-	if len(peers) == 0 {
-		// broadcast to everyone
-		return true
-	}
-	for _, p := range peers {
-		if ai.ID.String() == p.String() {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *Communication) startChannel(privKeyBytes []byte) error {
@@ -176,6 +150,7 @@ func (c *Communication) Stop() error {
 	// we need to stop the handler and the p2p services firstly, then terminate the our communication threads
 	if err := c.host.Close(); err != nil {
 		c.logger.Err(err).Msg("fail to close host network")
+		return err
 	}
 
 	close(c.stopChan)

@@ -15,6 +15,7 @@ const (
 	TimeoutReadHeader  = time.Second
 	TimeoutReadPayload = time.Second * 2
 	TimeoutWriteHeader = time.Second
+	MaxPayload         = 81920 // 80kb
 )
 
 // applyDeadline will be true , and only disable it when we are doing test
@@ -45,6 +46,9 @@ func ReadLength(stream network.Stream) (uint32, error) {
 
 // ReadPayload from stream
 func ReadPayload(stream network.Stream, length uint32) ([]byte, error) {
+	if length > MaxPayload {
+		return nil, fmt.Errorf("can't read more than MaxPayload(%d bytes)", MaxPayload)
+	}
 	buf := make([]byte, length)
 	if applyDeadline {
 		if err := stream.SetReadDeadline(time.Now().Add(TimeoutReadPayload)); nil != err {
