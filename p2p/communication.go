@@ -220,7 +220,6 @@ func (c *Communication) readFromStream(stream network.Stream) {
 			l := binary.LittleEndian.Uint32(length)
 			// we are transferring protobuf messages , how big can that be , if it is larger then MaxPayload , then definitely no no...
 			if l > MaxPayload {
-				fmt.Println("TTTTTTTTTTTTTTTTTTLLLLLLLLLLLLLLLLAAAAAAAAAAAARRRRRRRRRRRRRR")
 				c.logger.Warn().Msgf("peer:%s trying to send %d bytes payload", peerID, l)
 				return
 			}

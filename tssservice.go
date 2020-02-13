@@ -15,7 +15,6 @@ import (
 
 	"github.com/binance-chain/go-sdk/common/types"
 	bkeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
-	"github.com/binance-chain/tss-lib/ecdsa/signing"
 	btss "github.com/binance-chain/tss-lib/tss"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/gorilla/mux"
@@ -381,23 +380,24 @@ func (t *TssServer) keySign(w http.ResponseWriter, r *http.Request) {
 	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeySignVerMsg)
 	defer t.p2pCommunication.CancelSubscribe(p2p.TSSKeySignSync)
 
-	signatureData, err := keysignInstance.SignMessage(keySignReq)
+	signatureData,reqMsgMap, err := keysignInstance.SignMessage(keySignReq)
 	// the statistic of keygen only care about Tss it self, even if the following http response aborts,
 	// it still counted as a successful keygen as the Tss model runs successfully.
 	if err != nil {
 		t.logger.Error().Err(err).Msg("err in keysign")
 		atomic.AddUint64(&t.Status.FailedKeySign, 1)
 		keySignFlag = common.Fail
-		signatureData = &signing.SignatureData{}
+		signatureData = nil
 	} else {
 		atomic.AddUint64(&t.Status.SucKeySign, 1)
 	}
 	// this indicates we are not in this round keysign
 	if signatureData == nil && err == nil {
-		keysignInstance.WriteKeySignResult(w, "", "", common.NA)
+		keysignInstance.WriteKeySignResult(w, nil,nil,  common.NA)
 		return
 	}
-	keysignInstance.WriteKeySignResult(w, base64.StdEncoding.EncodeToString(signatureData.R), base64.StdEncoding.EncodeToString(signatureData.S), keySignFlag)
+	//keysignInstance.WriteKeySignResult(w, base64.StdEncoding.EncodeToString(signatureData.R), base64.StdEncoding.EncodeToString(signatureData.S), keySignFlag)
+	keysignInstance.WriteKeySignResult(w, signatureData, reqMsgMap,keySignFlag)
 }
 
 func (t *TssServer) getP2pID(w http.ResponseWriter, _ *http.Request) {

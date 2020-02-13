@@ -12,7 +12,7 @@ type KeySignReq struct {
 
 // KeySignResp key sign response with batch signatures
 type KeySignRespBatch struct {
-	KeySignResp []Signature
+	KeySignResp []KeySignResp
 }
 
 // Signature for each keysign request message
@@ -21,4 +21,9 @@ type Signature struct {
 	S      string        `json:"s"`
 	Status common.Status `json:"status"`
 	Blame  common.Blame  `json:"Blame"`
+}
+
+type KeySignResp struct {
+	Msg string `json:"request_msg"`
+	Sig Signature
 }

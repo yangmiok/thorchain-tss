@@ -272,8 +272,6 @@ func (t *TssCommon) updateLocal(wireMsg *p2p.WireMessage) error {
 	json.Unmarshal(wireMsg.Message, &BulkMsg)
 
 	for _, el := range BulkMsg {
-		fmt.Printf(">>>>BBBBBBBBBBB%v>>>>>>###>>>>>>>%v\n", el.MsgIdentifier, wireMsg.RoundInfo)
-
 		Party, ok := partyInfo.PartyMap[el.MsgIdentifier]
 		if !ok {
 			t.logger.Error().Msg("cannot find the party to this wired msg")
@@ -281,26 +279,12 @@ func (t *TssCommon) updateLocal(wireMsg *p2p.WireMessage) error {
 		}
 		partyID, ok := partyInfo.PartyIDMap[el.Routing.From.Id]
 		thisParty := Party
-		fmt.Printf(">>>>>>>>>>>>>>ENTER><>>>>>>>>>>>>>>>>>>yy----%v>>>>>>>>>>>from:%v----to:%v---broadcast:%v\n", el.MsgIdentifier, el.Routing.From, el.Routing.To, el.Routing.IsBroadcast)
 		if _, err := thisParty.UpdateFromBytes(el.WiredMsg, partyID, wireMsg.Routing.IsBroadcast); nil != err {
-			fmt.Println("WWWWWWWWWWWWCCCCCCCCCCCCCNNNNNNNNNNMMMMMMMMDDDDDDDDDDBBBBBBBBBBB")
 			return fmt.Errorf("fail to set bytes to local party: %w", err)
 		}
-		fmt.Println(">>>>>>>>>>>>>>EXIT><>>>>>>>>>>>>>>>>>>yy")
 
 	}
 
-	//partyID, ok := partyInfo.PartyIDMap[wireMsg.Routing.From.Id]
-	//if !ok {
-	//	return fmt.Errorf("get message from unknown party %s", partyID.Id)
-	//}
-	//var thisParty btss.Party
-	//for _, el := range partyInfo.PartyMap {
-	//	thisParty = *el
-	//}
-	//if _, err := thisParty.UpdateFromBytes(wireMsg.Message, partyID, wireMsg.Routing.IsBroadcast); nil != err {
-	//	return fmt.Errorf("fail to set bytes to local party: %w", err)
-	//}
 	return nil
 }
 
@@ -350,9 +334,7 @@ func (t *TssCommon) ProcessOneMessage(wrappedMsg *p2p.WrappedMessage, peerID str
 		}
 		//we check whether this peer has already send us the VerMsg before update
 		ret := t.checkDupAndUpdateVerMsg(&bMsg, peerID)
-		fmt.Printf("2222222222222222222222222>>>>>>>>>>>%v, from peer %v\n", ret, peerID)
 		if ret {
-			fmt.Println("3333333333333333333333")
 			return t.processVerMsg(&bMsg)
 		}
 		return nil
@@ -443,7 +425,7 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, tssMsgType p2p.THORChainTSSMe
 		return fmt.Errorf("fail to get wire bytes: %w", err)
 	}
 
-	if r.IsBroadcast{
+	if r.IsBroadcast {
 
 		cachedWiredMsg := NewCachedWireMsg(msgDat, msg.GetFrom().Moniker, r)
 
@@ -457,11 +439,8 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, tssMsgType p2p.THORChainTSSMe
 			t.cachedWireBroadcastMsgLists[msg.Type()] = cachedList
 		}
 
-
-	} else{
+	} else {
 		cachedWiredMsg := NewCachedWireMsg(msgDat, msg.GetFrom().Moniker, r)
-
-		fmt.Printf("YYYYYYYYYYYYYUUUUUUUUUBBBBBBBB>>>>>>%v----------%v\n",r, r.To[0].String())
 		cachedList, ok := t.cachedWireBroadcastMsgLists[r.To[0].String()]
 		if !ok {
 			l := []BulkWireMsg{cachedWiredMsg}
@@ -473,9 +452,8 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, tssMsgType p2p.THORChainTSSMe
 
 	}
 
-
 	// now we send the messages that have all the signers ready
-	for wiredMsgType, wiredMsgList := range t.cachedWireUnicastMsgLists{
+	for wiredMsgType, wiredMsgList := range t.cachedWireUnicastMsgLists {
 		if len(wiredMsgList) == len(t.partyInfo.PartyMap) {
 			t.sendBulkMsg(wiredMsgType, tssMsgType, wiredMsgList)
 			// we do need to delete this message
@@ -484,7 +462,7 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, tssMsgType p2p.THORChainTSSMe
 	}
 
 	// now we send the messages that have all the signers ready
-	for wiredMsgType, wiredMsgList := range t.cachedWireBroadcastMsgLists{
+	for wiredMsgType, wiredMsgList := range t.cachedWireBroadcastMsgLists {
 		if len(wiredMsgList) == len(t.partyInfo.PartyMap) {
 			t.sendBulkMsg(wiredMsgType, tssMsgType, wiredMsgList)
 			// we do need to delete this message
@@ -501,12 +479,10 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *p2p.BroadcastConfirmMessa
 	if nil == broadcastConfirmMsg {
 		return nil
 	}
-	fmt.Println("5444443333333333333")
 	partyInfo := t.getPartyInfo()
 	if nil == partyInfo {
 		return errors.New("can't process ver msg , local party is not ready")
 	}
-	fmt.Println("888777766")
 	key := broadcastConfirmMsg.Key
 	localCacheItem := t.TryGetLocalCacheItem(key)
 	if nil == localCacheItem {
@@ -514,15 +490,8 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *p2p.BroadcastConfirmMessa
 		localCacheItem = NewLocalCacheItem(nil, broadcastConfirmMsg.Hash)
 		t.updateLocalUnconfirmedMessages(key, localCacheItem)
 	}
-	fmt.Printf("77777777777>%v\n", broadcastConfirmMsg)
 	localCacheItem.UpdateConfirmList(broadcastConfirmMsg.P2PID, broadcastConfirmMsg.Hash)
 	t.logger.Debug().Msgf("total confirmed parties:%+v", localCacheItem.ConfirmedList)
-	fmt.Printf("total confirmed %v, party num=====%v\n", localCacheItem.TotalConfirmParty(), len(partyInfo.PartyIDMap)-1)
-	//if localCacheItem.Msg == nil{
-	//	fmt.Println("55555555555555NNNNNNNNNNNN")
-	//}else{
-	//	fmt.Printf("55555UYYYYYYYYYYY\n")
-	//}
 	if localCacheItem.TotalConfirmParty() == (len(partyInfo.PartyIDMap)-1) && localCacheItem.Msg != nil {
 		errHashCheck := t.hashCheck(localCacheItem)
 
@@ -544,7 +513,6 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *p2p.BroadcastConfirmMessa
 			t.logger.Error().Msg("The consistency check failed")
 			return errHashCheck
 		}
-		fmt.Println("1234123451234523423423423LLLL")
 		if err := t.updateLocal(localCacheItem.Msg); nil != err {
 			return fmt.Errorf("fail to update the message to local party: %w", err)
 		}
@@ -593,7 +561,6 @@ func (t *TssCommon) processTSSMsg(wireMsg *p2p.WireMessage, msgType p2p.THORChai
 	}
 	localCacheItem.UpdateConfirmList(t.localPeerID, msgHash)
 	if localCacheItem.TotalConfirmParty() == (len(partyInfo.PartyIDMap) - 1) {
-		fmt.Println("444444444466666666677777777777888888888888")
 		if err := t.updateLocal(localCacheItem.Msg); nil != err {
 			return fmt.Errorf("fail to update the message to local party: %w", err)
 		}
