@@ -102,7 +102,9 @@ func (ks *TssKeySign) onMessageValidated(msg *p2p.WireMessage) {
 // signMessage
 func (ks *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage.KeygenLocalState, parties []string, messageID string) (*signing.SignatureData, error) {
 	partiesID, localPartyID, err := common.GetParties(parties, localStateItem.LocalPartyKey)
-
+	if err != nil {
+		return nil, fmt.Errorf("fail to get parties: %w", err)
+	}
 	if !common.Contains(partiesID, localPartyID) {
 		ks.logger.Info().Msgf("we are not in this rounds key sign")
 		return nil, nil
