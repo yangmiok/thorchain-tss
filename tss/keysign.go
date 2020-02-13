@@ -1,6 +1,7 @@
 package tss
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"sort"
@@ -15,61 +16,68 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/storage"
 )
 
-func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
+func (t *TssServer) KeySign(ctx context.Context, req keysign.Request) (keysign.Response, error) {
 	t.tssKeySignLocker.Lock()
 	defer t.tssKeySignLocker.Unlock()
+	select {
+	case <-ctx.Done():
+		return keysign.Response{}, nil
+	default:
 
-	keySignFlag := common.Success
+		t.logger.Info().Msg("key sign started")
 
-	msgID, err := t.requestToMsgId(req)
-	if err != nil {
-		return keysign.Response{}, err
-	}
+		keySignFlag := common.Success
 
-	localStateItem, err := t.stateManager.GetLocalState(req.PoolPubKey)
-	if err != nil {
-		return keysign.Response{}, fmt.Errorf("fail to get local keygen state: %w", err)
-	}
-	msgToSign, err := base64.StdEncoding.DecodeString(req.Message)
-	if err != nil {
-		return keysign.Response{}, fmt.Errorf("fail to decode message(%s): %w", req.Message, err)
-	}
-	result, err := t.joinParty(msgID, msgToSign, localStateItem)
-	if err != nil {
-		// don't blame node for forming party
-		return keysign.Response{}, fmt.Errorf("fail to form keysign party: %w", err)
-	}
-	if result.Type != messages.JoinPartyResponse_Success {
-		return keysign.Response{}, fmt.Errorf("fail to form keysign party: %s", result.Type)
-	}
-	keys, err := GetPubKeysFromPeerIDs(result.PeerIDs)
-	if err != nil {
-		return keysign.Response{}, fmt.Errorf("fail to convert peer ID to pub keys: %w", err)
-	}
-	signatureData, err := t.keysignInstance.SignMessage(msgToSign, localStateItem, keys, msgID)
-	// the statistic of keygen only care about Tss it self, even if the following http response aborts,
-	// it still counted as a successful keygen as the Tss model runs successfully.
-	if err != nil {
-		t.logger.Error().Err(err).Msg("err in keysign")
-		atomic.AddUint64(&t.Status.FailedKeySign, 1)
-		keySignFlag = common.Fail
-		signatureData = &signing.SignatureData{}
-	} else {
-		atomic.AddUint64(&t.Status.SucKeySign, 1)
-	}
-	blame := common.NoBlame
+		msgID, err := t.requestToMsgId(req)
+		if err != nil {
+			return keysign.Response{}, err
+		}
 
-	// this indicates we are not in this round keysign
-	if signatureData == nil && err == nil {
-		return keysign.NewResponse("", "", common.NA, blame), nil
-	}
+		localStateItem, err := t.stateManager.GetLocalState(req.PoolPubKey)
+		if err != nil {
+			return keysign.Response{}, fmt.Errorf("fail to get local keygen state: %w", err)
+		}
+		msgToSign, err := base64.StdEncoding.DecodeString(req.Message)
+		if err != nil {
+			return keysign.Response{}, fmt.Errorf("fail to decode message(%s): %w", req.Message, err)
+		}
+		result, err := t.joinParty(msgID, msgToSign, localStateItem)
+		if err != nil {
+			// don't blame node for forming party
+			return keysign.Response{}, fmt.Errorf("fail to form keysign party: %w", err)
+		}
+		if result.Type != messages.JoinPartyResponse_Success {
+			return keysign.Response{}, fmt.Errorf("fail to form keysign party: %s", result.Type)
+		}
+		keys, err := GetPubKeysFromPeerIDs(result.PeerIDs)
+		if err != nil {
+			return keysign.Response{}, fmt.Errorf("fail to convert peer ID to pub keys: %w", err)
+		}
+		signatureData, err := t.keysignInstance.SignMessage(msgToSign, localStateItem, keys, msgID)
+		// the statistic of keygen only care about Tss it self, even if the following http response aborts,
+		// it still counted as a successful keygen as the Tss model runs successfully.
+		if err != nil {
+			t.logger.Error().Err(err).Msg("err in keysign")
+			atomic.AddUint64(&t.Status.FailedKeySign, 1)
+			keySignFlag = common.Fail
+			signatureData = &signing.SignatureData{}
+		} else {
+			atomic.AddUint64(&t.Status.SucKeySign, 1)
+		}
+		blame := common.NoBlame
 
-	return keysign.NewResponse(
-		base64.StdEncoding.EncodeToString(signatureData.R),
-		base64.StdEncoding.EncodeToString(signatureData.S),
-		keySignFlag,
-		blame,
-	), nil
+		// this indicates we are not in this round keysign
+		if signatureData == nil && err == nil {
+			return keysign.NewResponse("", "", common.NA, blame), nil
+		}
+
+		return keysign.NewResponse(
+			base64.StdEncoding.EncodeToString(signatureData.R),
+			base64.StdEncoding.EncodeToString(signatureData.S),
+			keySignFlag,
+			blame,
+		), nil
+	}
 }
 
 func (t *TssServer) joinParty(msgID string, messageToSign []byte, localStateItem storage.KeygenLocalState) (*messages.JoinPartyResponse, error) {
@@ -95,6 +103,7 @@ func (t *TssServer) joinParty(msgID string, messageToSign []byte, localStateItem
 	if err != nil {
 		return nil, fmt.Errorf("fail to get peer id from node pubkey: %w", err)
 	}
+	t.logger.Info().Str("leader", leaderPeerID.String()).Msg("nominate leader node")
 	joinPartyReq := &messages.JoinPartyRequest{
 		ID:        msgID,
 		Threshold: int32(threshold + 1),

@@ -73,6 +73,10 @@ func (kg *TssKeyGen) onMessageReceived(buf []byte, remotePeer peer.ID) {
 		kg.messageValidator.Park(&msg, remotePeer)
 		return
 	}
+	if !msg.Routing.IsBroadcast {
+		kg.logger.Info().Msg("message is not broadcast")
+		kg.onMessageValidated(&msg)
+	}
 	kg.validateMessage(&msg, remotePeer)
 }
 
@@ -213,14 +217,14 @@ func (kg *TssKeyGen) processKeyGen(errChan chan struct{},
 			}
 			if r.To == nil && r.IsBroadcast {
 				kg.messenger.Send(jsonBuf, peersAll)
-				continue
+			} else {
+				kg.logger.Info().Msg("##########none broadcast messages")
+				peersTo, err := pi.GetPeersFromParty(r.To)
+				if err != nil {
+					return nil, fmt.Errorf("fail to get peers: %w", err)
+				}
+				kg.messenger.Send(jsonBuf, peersTo)
 			}
-			peersTo, err := pi.GetPeersFromParty(r.To)
-			if err != nil {
-				return nil, fmt.Errorf("fail to get peers: %w", err)
-			}
-
-			kg.messenger.Send(jsonBuf, peersTo)
 			if err := kg.messageValidator.VerifyParkedMessages(messageID, peersAll); err != nil {
 				return nil, fmt.Errorf("fail to verify parked messages:%w", err)
 			}

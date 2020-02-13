@@ -33,6 +33,7 @@ type MessageValidator struct {
 	cache                      map[string]*StandbyMessage
 	onMessageConfirmedCallback MessageConfirmedHandler
 	messageBox                 MessageBox
+	callbackLock               *sync.Mutex
 }
 
 // NewMessageValidator create a new message
@@ -48,6 +49,7 @@ func NewMessageValidator(host host.Host,
 		host:                       host,
 		lock:                       &sync.Mutex{},
 		cache:                      make(map[string]*StandbyMessage),
+		callbackLock:               &sync.Mutex{},
 		onMessageConfirmedCallback: confirmedCallback,
 		currentProtocolID:          protocol,
 		messageBox:                 messageBox,
@@ -70,7 +72,6 @@ func (mv *MessageValidator) onReceivedMessage(buf []byte, remotePeer peer.ID) {
 }
 
 func (mv *MessageValidator) onConfirmMessage(msg *messages.ConfirmMessage, remotePeer peer.ID) {
-	mv.logger.Info().Msgf("peer id: %s,msg:%+v", remotePeer.String(), msg)
 	sm := mv.getStandbyMessage(msg.Key)
 	if nil == sm {
 		// someone confirm the message before we do
@@ -78,14 +79,12 @@ func (mv *MessageValidator) onConfirmMessage(msg *messages.ConfirmMessage, remot
 		mv.setStandbyMessage(msg.Key, sm)
 	}
 	sm.UpdateConfirmList(remotePeer, msg.Hash)
-	mv.logger.Info().Msgf("sm:%+v", sm)
 	if sm.Msg == nil {
 		return
 	}
 
 	if sm.Threshold != -1 && sm.Threshold == sm.TotalConfirmed() {
-		mv.onMessageConfirmedCallback(sm.Msg)
-		mv.removeStandbyMessage(msg.Key)
+		mv.fireCallback(sm, msg.Key)
 	}
 }
 func (mv *MessageValidator) removeStandbyMessage(key string) {
@@ -143,12 +142,19 @@ func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) err
 	mv.messenger.Send(buf, peers)
 	// fan out the messages
 
-	mv.logger.Info().Msgf("==>after sm:%+v", sm)
 	if sm.Threshold != -1 && sm.Threshold == sm.TotalConfirmed() {
-		mv.onMessageConfirmedCallback(sm.Msg)
-		mv.removeStandbyMessage(key)
+		mv.fireCallback(sm, key)
 	}
 	return nil
+}
+func (mv *MessageValidator) fireCallback(sm *StandbyMessage, key string) {
+	mv.callbackLock.Lock()
+	defer mv.callbackLock.Unlock()
+	if sm.Msg != nil {
+		mv.onMessageConfirmedCallback(sm.Msg)
+		mv.removeStandbyMessage(key)
+		sm.Msg = nil
+	}
 }
 
 // Park a message into MessageBox usually it means the local party is not ready

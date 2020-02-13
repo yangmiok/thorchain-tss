@@ -31,7 +31,6 @@ type TssKeySign struct {
 }
 
 func NewTssKeySign(host host.Host) (*TssKeySign, error) {
-
 	tKeySign := &TssKeySign{
 		logger:   log.With().Str("module", "keysign").Logger(),
 		host:     host,
@@ -62,14 +61,20 @@ func (ks *TssKeySign) onMessageReceived(buf []byte, remotePeer peer.ID) {
 		ks.messageValidator.Park(&msg, remotePeer)
 		return
 	}
+	if !msg.Routing.IsBroadcast {
+		ks.logger.Info().Msg("message is not broadcast")
+		ks.onMessageValidated(&msg)
+	}
 	ks.validateMessage(&msg, remotePeer)
 }
 
 func (ks *TssKeySign) validateMessage(msg *p2p.WireMessage, remotePeer peer.ID) {
 	pi := ks.getPartyInfo()
 	if nil == pi {
+		ks.logger.Error().Msg("local party info is nil")
 		return
 	}
+
 	peers, err := pi.GetPeers([]peer.ID{
 		remotePeer,
 		ks.host.ID(),
@@ -84,9 +89,11 @@ func (ks *TssKeySign) validateMessage(msg *p2p.WireMessage, remotePeer peer.ID) 
 }
 
 func (ks *TssKeySign) onMessageValidated(msg *p2p.WireMessage) {
-	ks.lock.Lock()
-	defer ks.lock.Unlock()
-	if _, err := ks.partyInfo.Party.UpdateFromBytes(msg.Message, msg.Routing.From, msg.Routing.IsBroadcast); err != nil {
+	pi := ks.getPartyInfo()
+	ks.logger.Info().Str("route info", msg.RoundInfo).
+		Msg("message validated")
+	defer ks.logger.Info().Str("route info", msg.RoundInfo).Msg("message applied")
+	if _, err := pi.Party.UpdateFromBytes(msg.Message, msg.Routing.From, msg.Routing.IsBroadcast); err != nil {
 		ks.logger.Error().Err(err).Msg("fail to update local party")
 		// get who to blame
 	}
@@ -121,7 +128,7 @@ func (ks *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage.Keyge
 		Party:     keySignParty,
 		PartiesID: partiesID,
 	})
-
+	defer ks.setPartyInfo(nil)
 	// start the key sign
 	go func() {
 		if err := keySignParty.Start(); nil != err {
@@ -153,7 +160,7 @@ func (ks *TssKeySign) getPartyInfo() *common.PartyInfo {
 
 // TODO make keygen timeout calculate based on the number of parties
 func (ks *TssKeySign) getKeysignTimeout() time.Duration {
-	return time.Minute * 5
+	return time.Second * 30
 }
 
 func (ks *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan btss.Message, endCh <-chan signing.SignatureData, messageID string) (*signing.SignatureData, error) {
@@ -206,15 +213,17 @@ func (ks *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan btss.Me
 			if err != nil {
 				return nil, fmt.Errorf("fail to get peers: %w", err)
 			}
+
 			if r.To == nil && r.IsBroadcast {
 				ks.messenger.Send(jsonBuf, peersAll)
-				continue
+			} else {
+				ks.logger.Info().Msg("##########none broadcast messages")
+				peersTo, err := pi.GetPeersFromParty(r.To)
+				if err != nil {
+					return nil, fmt.Errorf("fail to get peers: %w", err)
+				}
+				ks.messenger.Send(jsonBuf, peersTo)
 			}
-			peersTo, err := pi.GetPeersFromParty(r.To)
-			if err != nil {
-				return nil, fmt.Errorf("fail to get peers: %w", err)
-			}
-			ks.messenger.Send(jsonBuf, peersTo)
 			if err := ks.messageValidator.VerifyParkedMessages(messageID, peersAll); err != nil {
 				return nil, fmt.Errorf("fail to verify parked messages:%w", err)
 			}

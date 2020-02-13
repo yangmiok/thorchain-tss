@@ -28,7 +28,7 @@ func main() {
 	}
 	// Setup logging
 	golog.SetAllLoggers(logging.INFO)
-	_ = golog.SetLogLevel("tss-lib", "INFO")
+	_ = golog.SetLogLevel("tss-lib", "DEBUG")
 	common.InitLog(generalConf.LogLevel, generalConf.Pretty, "tss_service")
 
 	// Setup Bech32 Prefixes
@@ -77,7 +77,7 @@ func parseFlags() (generalConf common.GeneralConfig, tssConf common.TssConfig, p
 	flag.StringVar(&generalConf.TssAddr, "tss-port", "127.0.0.1:8080", "tss port")
 	flag.StringVar(&generalConf.InfoAddr, "info-port", ":8081", "info port")
 	flag.BoolVar(&generalConf.Help, "h", false, "Display Help")
-	flag.StringVar(&generalConf.LogLevel, "loglevel", "debug", "Log Level")
+	flag.StringVar(&generalConf.LogLevel, "loglevel", "info", "Log Level")
 	flag.BoolVar(&generalConf.Pretty, "pretty-log", false, "Enables unstructured prettified logging. This is useful for local debugging")
 	flag.StringVar(&generalConf.BaseFolder, "home", "", "home folder to store the keygen state file")
 
