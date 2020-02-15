@@ -106,7 +106,8 @@ func (kg *TssKeyGen) onMessageValidated(msg *p2p.WireMessage) {
 		Msg("message validated")
 	if _, err := pi.Party.UpdateFromBytes(msg.Message, msg.Routing.From, msg.Routing.IsBroadcast); err != nil {
 		kg.logger.Error().Err(err).Msg("fail to update local party")
-		// get who to blame
+
+		// TODO get who to blame
 	}
 }
 
@@ -149,8 +150,7 @@ func (kg *TssKeyGen) GenerateNewKey(keygenReq Request, messageID string) (*crypt
 		}
 	}()
 
-	r, err := kg.processKeyGen(errChan, outCh, endCh, keyGenLocalStateItem, messageID)
-	return r, err
+	return kg.processKeyGen(errChan, outCh, endCh, keyGenLocalStateItem, messageID)
 }
 
 func (kg *TssKeyGen) setPartyInfo(partyInfo *common.PartyInfo) {
@@ -183,10 +183,10 @@ func (kg *TssKeyGen) processKeyGen(errChan chan struct{},
 			return nil, errors.New("keygen party fail to start")
 		case <-kg.stopChan: // when TSS processor receive signal to quit
 			return nil, errors.New("received exit signal")
-
 		case <-time.After(keyGenTimeout):
-
-			kg.logger.Error().Msgf("fail to generate message with %s", keyGenTimeout)
+			// be aware this timeout only means how long we wait for the next message to be emit by the local party.
+			// this is not the overall keygen timeout
+			kg.logger.Error().Msgf("fail to generate key within %s", keyGenTimeout)
 			return nil, common.ErrTssTimeOut
 
 		case msg := <-outCh:

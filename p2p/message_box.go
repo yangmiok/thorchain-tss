@@ -5,14 +5,14 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
-// MessageBox
-type MessageBox interface {
+// MailBox
+type MailBox interface {
 	AddMessage(messageID string, msg *WireMessage, remotePeer peer.ID)
 	RemoveMessage(messageID string)
 	GetMessages(messageID string) []*CachedMessage
 }
 
-type MessageBoxImp struct {
+type MailBoxImp struct {
 	cache *lru.Cache
 }
 
@@ -21,17 +21,17 @@ type CachedMessage struct {
 	Message    *WireMessage
 }
 
-// NewMessageBoxImp create a new MessageBoxImp
-func NewMessageBoxImp() (*MessageBoxImp, error) {
+// NewMailBoxImp create a new MailBoxImp
+func NewMailBoxImp() (*MailBoxImp, error) {
 	cache, err := lru.New(128)
 	if err != nil {
 		return nil, err
 	}
-	return &MessageBoxImp{cache: cache}, nil
+	return &MailBoxImp{cache: cache}, nil
 }
 
 // AddMessage will add a message into the mail box
-func (m *MessageBoxImp) AddMessage(messageID string, msg *WireMessage, remotePeer peer.ID) {
+func (m *MailBoxImp) AddMessage(messageID string, msg *WireMessage, remotePeer peer.ID) {
 	// in a real scenario , we might not get multiple messages, but it might happen
 	c, ok := m.cache.Get(messageID)
 	if !ok {
@@ -54,12 +54,12 @@ func (m *MessageBoxImp) AddMessage(messageID string, msg *WireMessage, remotePee
 }
 
 // RemoveMessage remove the given message from mailbox
-func (m *MessageBoxImp) RemoveMessage(messageID string) {
+func (m *MailBoxImp) RemoveMessage(messageID string) {
 	m.cache.Remove(messageID)
 }
 
 // GetMessages return a slice of cached messages
-func (m *MessageBoxImp) GetMessages(messageID string) []*CachedMessage {
+func (m *MailBoxImp) GetMessages(messageID string) []*CachedMessage {
 	if !m.cache.Contains(messageID) {
 		return nil
 	}

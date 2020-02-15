@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	BlameHashCheck  = "hash check failed"
 	BlameTssTimeout = "Tss timeout"
 )
 

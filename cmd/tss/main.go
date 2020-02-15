@@ -82,8 +82,6 @@ func parseFlags() (generalConf common.GeneralConfig, tssConf common.TssConfig, p
 	flag.StringVar(&generalConf.BaseFolder, "home", "", "home folder to store the keygen state file")
 
 	// we setup the Tss parameter configuration
-	flag.DurationVar(&tssConf.KeyGenTimeout, "gentimeout", 30*time.Second, "keygen timeout")
-	flag.DurationVar(&tssConf.KeySignTimeout, "signtimeout", 30*time.Second, "keysign timeout")
 	flag.DurationVar(&tssConf.PreParamTimeout, "preparamtimeout", 5*time.Minute, "pre-parameter generation timeout")
 
 	// we setup the p2p network configuration

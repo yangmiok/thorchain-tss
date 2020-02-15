@@ -32,7 +32,7 @@ type MessageValidator struct {
 	lock                       *sync.Mutex
 	cache                      map[string]*StandbyMessage
 	onMessageConfirmedCallback MessageConfirmedHandler
-	messageBox                 MessageBox
+	messageBox                 MailBox
 	callbackLock               *sync.Mutex
 }
 
@@ -157,7 +157,7 @@ func (mv *MessageValidator) fireCallback(sm *StandbyMessage, key string) {
 	}
 }
 
-// Park a message into MessageBox usually it means the local party is not ready
+// Park a message into MailBox usually it means the local party is not ready
 func (mv *MessageValidator) Park(msg *WireMessage, remotePeer peer.ID) {
 	mv.messageBox.AddMessage(msg.MessageID, msg, remotePeer)
 }
