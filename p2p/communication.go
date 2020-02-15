@@ -19,13 +19,13 @@ import (
 )
 
 var (
-	joinPartyProtocol protocol.ID = "/p2p/join-party"
+	joinPartyProtocol protocol.ID = "/p2p/join-party/1.0.0"
 	// KeygenVerifyProtocol the protocol we used to send keygen verify messages
-	KeygenVerifyProtocol protocol.ID = "/p2p/keygen-verify"
+	KeygenVerifyProtocol protocol.ID = "/p2p/keygen-verify/1.0.0"
 	// KeysignVerifyProtocol the protocol we used send keysign verify messages
-	KeysignVerifyProtocol protocol.ID = "/p2p/keysign-verify"
-	KeygenProtocol        protocol.ID = "/p2p/keygen"
-	KeysignProtocol       protocol.ID = "/p2p/keysign"
+	KeysignVerifyProtocol protocol.ID = "/p2p/keysign-verify/1.0.0"
+	KeygenProtocol        protocol.ID = "/p2p/keygen/1.0.0"
+	KeysignProtocol       protocol.ID = "/p2p/keysign/1.0.0"
 )
 
 const (

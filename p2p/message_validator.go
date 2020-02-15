@@ -40,7 +40,7 @@ type MessageValidator struct {
 func NewMessageValidator(host host.Host,
 	confirmedCallback MessageConfirmedHandler,
 	protocol protocol.ID) (*MessageValidator, error) {
-	messageBox, err := NewMessageBoxImp()
+	messageBox, err := NewMailBoxImp()
 	if err != nil {
 		return nil, fmt.Errorf("fail to create local in memory cache: %w", err)
 	}
@@ -165,6 +165,7 @@ func (mv *MessageValidator) Park(msg *WireMessage, remotePeer peer.ID) {
 // VerifyParkedMessages when local party is ready , check whether they are messages left in the message box that can be verify now
 func (mv *MessageValidator) VerifyParkedMessages(messageID string, peers []peer.ID) error {
 	cachedMessages := mv.messageBox.GetMessages(messageID)
+	defer mv.messageBox.RemoveMessage(messageID)
 	for _, item := range cachedMessages {
 		// exclude the node who originally send messages to us
 		var peerIDs []peer.ID

@@ -2,10 +2,7 @@ package common
 
 import (
 	"errors"
-	"sync"
 	"time"
-
-	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
 
 const (
@@ -20,14 +17,6 @@ var (
 )
 
 var NoBlame = Blame{}
-
-// LocalCacheItem used to cache the unconfirmed broadcast message
-type LocalCacheItem struct {
-	Msg           *p2p.WireMessage
-	Hash          string
-	lock          *sync.Mutex
-	ConfirmedList map[string]string
-}
 
 // Blame is used to store the blame nodes and the fail reason
 type Blame struct {

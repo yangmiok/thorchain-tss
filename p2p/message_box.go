@@ -12,10 +12,12 @@ type MailBox interface {
 	GetMessages(messageID string) []*CachedMessage
 }
 
+// MailBoxImp is a implementation of MailBox
 type MailBoxImp struct {
 	cache *lru.Cache
 }
 
+// CachedMessage represent message in
 type CachedMessage struct {
 	RemotePeer peer.ID
 	Message    *WireMessage
