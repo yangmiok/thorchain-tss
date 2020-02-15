@@ -42,6 +42,29 @@ func (l *StandbyMessage) TotalConfirmed() int {
 	return len(l.ConfirmedList)
 }
 
+// Validated
+func (l *StandbyMessage) Validated() bool {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	if l.Threshold == 0 || len(l.ConfirmedList) == 0 {
+		return false
+	}
+	if l.Threshold > len(l.ConfirmedList) {
+		return false
+	}
+	target := ""
+	for _, v := range l.ConfirmedList {
+		if len(target) == 0 {
+			target = v
+			continue
+		}
+		if v != target {
+			return false
+		}
+	}
+	return true
+}
+
 // GetPeers is return the peers that had confirmed.
 func (l *StandbyMessage) GetPeers() []peer.ID {
 	peers := make([]peer.ID, 0, len(l.ConfirmedList))

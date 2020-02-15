@@ -83,7 +83,7 @@ func (mv *MessageValidator) onConfirmMessage(msg *messages.ConfirmMessage, remot
 		return
 	}
 
-	if sm.Threshold != -1 && sm.Threshold == sm.TotalConfirmed() {
+	if sm.Threshold != -1 && sm.Validated() {
 		mv.fireCallback(sm, msg.Key)
 	}
 }
@@ -142,7 +142,7 @@ func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) err
 	mv.messenger.Send(buf, peers)
 	// fan out the messages
 
-	if sm.Threshold != -1 && sm.Threshold == sm.TotalConfirmed() {
+	if sm.Threshold != -1 && sm.Validated() {
 		mv.fireCallback(sm, key)
 	}
 	return nil
