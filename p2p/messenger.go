@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -34,6 +35,12 @@ type Messenger struct {
 func NewMessenger(pID protocol.ID,
 	host host.Host,
 	onReceived MessageReceivedHandler) (*Messenger, error) {
+	if host == nil {
+		return nil, errors.New("host is nil")
+	}
+	if onReceived == nil {
+		return nil, errors.New("onReceived callback is nil")
+	}
 	m := &Messenger{
 		logger:            log.With().Str("module", "messenger").Str("protocol", string(pID)).Logger(),
 		host:              host,
@@ -72,6 +79,7 @@ func (m *Messenger) handleStream(stream network.Stream) {
 }
 
 func (m *Messenger) messageDistributor(idx int) {
+	defer m.wg.Done()
 	logger := m.logger.With().
 		Int("idx", idx).
 		Str("protocol", string(m.currentProtocolID)).
