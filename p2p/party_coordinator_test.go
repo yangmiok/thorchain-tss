@@ -53,8 +53,11 @@ func TestNewPartyCoordinator(t *testing.T) {
 	h3.SetStreamHandler(joinPartyProtocol, pc3.HandleStream)
 
 	pc1.Start()
+	defer pc1.Stop()
 	pc2.Start()
+	defer pc2.Stop()
 	pc3.Start()
+	defer pc3.Stop()
 
 	msgID := RandStringBytesMask(64)
 	joinPartyReq := messages.JoinPartyRequest{

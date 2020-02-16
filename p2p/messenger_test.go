@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
@@ -28,6 +29,9 @@ func (mc *messengerCallbackType) onReceived(msg []byte, remotePeer peer.ID) {
 	mc.receivedMessages[remotePeer] = append(messages, string(msg))
 }
 
+func closeHost(t *testing.T, host host.Host) {
+	assert.Nil(t, host.Close())
+}
 func TestMessenger(t *testing.T) {
 	applyDeadline = false
 	id1 := tnet.RandIdentityOrFatal(t)
@@ -44,13 +48,13 @@ func TestMessenger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer h1.Close()
+	defer closeHost(t, h1)
 	p1 := h1.ID()
 	h2, err := mn.AddPeer(id2.PrivateKey(), a2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer h2.Close()
+	defer closeHost(t, h2)
 	p2 := h2.ID()
 	h3, err := mn.AddPeer(id3.PrivateKey(), a3)
 	if err != nil {
@@ -60,7 +64,7 @@ func TestMessenger(t *testing.T) {
 	if err := mn.LinkAll(); err != nil {
 		t.Error(err)
 	}
-	defer h3.Close()
+	defer closeHost(t, h3)
 	if err := mn.ConnectAllButSelf(); err != nil {
 		t.Error(err)
 	}
@@ -107,4 +111,12 @@ func TestMessenger(t *testing.T) {
 	assert.NotNil(t, callBack3.receivedMessages[p2])
 	assert.Equal(t, "helloworld", callBack3.receivedMessages[p1][0])
 	assert.Equal(t, "what's up", callBack3.receivedMessages[p2][0])
+
+	m, err := NewMessenger(messengerTestProtocolID, nil, nil)
+	assert.NotNil(t, err)
+	assert.Nil(t, m)
+	m, err = NewMessenger(messengerTestProtocolID, h1, nil)
+	assert.NotNil(t, err)
+	assert.Nil(t, m)
+
 }
