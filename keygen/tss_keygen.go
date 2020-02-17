@@ -66,6 +66,7 @@ func (kg *TssKeyGen) onMessageReceived(buf []byte, remotePeer peer.ID) {
 		kg.logger.Error().Err(err).Msg("fail to unmarshal keygen message")
 		return
 	}
+	msg.RemotePeer = remotePeer
 	kg.logger.Info().Msgf("received message from:%s", remotePeer)
 	pi := kg.getPartyInfo()
 	if pi == nil {

@@ -7,7 +7,7 @@ import (
 
 // WireMessage the message that produced by tss-lib package
 type WireMessage struct {
-	RemotePeer peer.ID              `json:"remote_peer"`
+	RemotePeer peer.ID              `json:"-"`
 	Routing    *btss.MessageRouting `json:"routing"`
 	RoundInfo  string               `json:"round_info"`
 	Message    []byte               `json:"message"`
