@@ -148,13 +148,11 @@ func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) err
 	return nil
 }
 func (mv *MessageValidator) fireCallback(sm *StandbyMessage, key string) {
-	mv.callbackLock.Lock()
-	defer mv.callbackLock.Unlock()
-	if sm.Msg != nil {
+	sm.callback.Do(func() {
 		mv.onMessageConfirmedCallback(sm.Msg)
 		mv.removeStandbyMessage(key)
 		sm.Msg = nil
-	}
+	})
 }
 
 // Park a message into MailBox usually it means the local party is not ready

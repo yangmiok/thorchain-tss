@@ -91,6 +91,8 @@ func (ks *TssKeySign) validateMessage(msg *p2p.WireMessage, remotePeer peer.ID) 
 func (ks *TssKeySign) onMessageValidated(msg *p2p.WireMessage) {
 	pi := ks.getPartyInfo()
 	ks.logger.Info().Str("route info", msg.RoundInfo).
+		Bool("broadcast", msg.Routing.IsBroadcast).
+		Str("from", msg.Routing.From.Moniker).
 		Msg("message validated")
 	defer ks.logger.Info().Str("route info", msg.RoundInfo).Msg("message applied")
 	if _, err := pi.Party.UpdateFromBytes(msg.Message, msg.Routing.From, msg.Routing.IsBroadcast); err != nil {
@@ -188,6 +190,11 @@ func (ks *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan btss.Me
 			// 	return nil, fmt.Errorf("fail to get the blamed peers %w", common.ErrTssTimeOut)
 			// }
 			// tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blamePeers)
+			pi := ks.getPartyInfo()
+			parties := pi.Party.WaitingFor()
+			for _, p := range parties {
+				ks.logger.Error().Msgf("waiting for: %+v", p)
+			}
 			return nil, common.ErrTssTimeOut
 		case msg := <-outCh:
 			ks.logger.Debug().Msgf(">>>>>>>>>>key sign msg: %s", msg.String())
@@ -215,12 +222,12 @@ func (ks *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan btss.Me
 			if err != nil {
 				return nil, fmt.Errorf("fail to get peers: %w", err)
 			}
-
-			if r.To == nil && r.IsBroadcast {
+			ks.logger.Info().Str("type", msg.Type()).Msgf("broadcast:%+v,", r)
+			toParties := msg.GetTo()
+			if toParties == nil {
 				ks.messenger.Send(jsonBuf, peersAll)
 			} else {
-				ks.logger.Debug().Msg("##########none broadcast messages")
-				peersTo, err := pi.GetPeersFromParty(r.To)
+				peersTo, err := pi.GetPeersFromParty(toParties)
 				if err != nil {
 					return nil, fmt.Errorf("fail to get peers: %w", err)
 				}

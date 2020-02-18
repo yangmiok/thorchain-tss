@@ -14,6 +14,7 @@ type StandbyMessage struct {
 	Threshold     int
 	lock          *sync.Mutex
 	ConfirmedList map[peer.ID]string
+	callback      *sync.Once
 }
 
 // NewStandbyMessage create a new instance of StnadbyMessage , msg can be nil , when msg is nil that means it received
@@ -25,6 +26,7 @@ func NewStandbyMessage(msg *WireMessage, hash string, threshold int) *StandbyMes
 		Threshold:     threshold,
 		lock:          &sync.Mutex{},
 		ConfirmedList: make(map[peer.ID]string),
+		callback:      &sync.Once{},
 	}
 }
 

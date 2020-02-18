@@ -84,8 +84,8 @@ func (m *Messenger) messageDistributor(idx int) {
 		Int("idx", idx).
 		Str("protocol", string(m.currentProtocolID)).
 		Logger()
-	logger.Info().Msg("message distributor started")
-	defer logger.Info().Msg("message distributor stopped")
+	logger.Debug().Msg("message distributor started")
+	defer logger.Debug().Msg("message distributor stopped")
 	for {
 		select {
 		case <-m.stopChan:
