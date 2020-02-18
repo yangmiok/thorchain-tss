@@ -95,7 +95,7 @@ func (ks *TssKeySign) onMessageValidated(msg *p2p.WireMessage) {
 	ks.logger.Info().Str("route info", msg.RoundInfo).
 		Bool("broadcast", msg.Routing.IsBroadcast).
 		Str("from", msg.Routing.From.Moniker).
-		Msg("message validated")
+		Msg("++message validated++")
 	defer ks.logger.Info().Str("route info", msg.RoundInfo).Msg("message applied")
 	if _, err := pi.Party.UpdateFromBytes(msg.Message, msg.Routing.From, msg.Routing.IsBroadcast); err != nil {
 		ks.logger.Error().Err(err).Msg("fail to update local party")

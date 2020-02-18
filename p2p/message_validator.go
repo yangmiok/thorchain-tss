@@ -140,8 +140,8 @@ func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) err
 	if err != nil {
 		return fmt.Errorf("fail to marshal confirm message: %w", err)
 	}
-	mv.messenger.Send(buf, peers)
 	// fan out the messages
+	go mv.messenger.Send(buf, peers)
 
 	if sm.Threshold != -1 && sm.Validated() {
 		mv.fireCallback(sm, key)
