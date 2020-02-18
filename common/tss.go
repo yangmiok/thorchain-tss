@@ -146,6 +146,96 @@ func (t *TssCommon) sendMsg(message p2p.WrappedMessage, peerIDs []peer.ID) {
 	})
 }
 
+
+// signers sync function
+func (t *TssCommon) NodeSyncKeySign(msgId string, threshold int, msgChan chan *p2p.Message, messageType p2p.THORChainTSSMessageType) ([]string, error) {
+	var err error
+	var standbyPeers []string
+	//peersMap := make(map[peer.ID][]string)
+	var peersMap sync.Map
+
+	peerIDs := t.P2PPeers
+	if len(peerIDs) == 0 {
+		t.logger.Error().Msg("fail to get any peer")
+		return standbyPeers, errors.New("fail to get any peer")
+	}
+
+	broadcastMsg, err := json.Marshal(SignSyncMsg{
+		Type:  "EoI",
+		MsgID: msgId,
+		Peers: nil,
+	})
+	if err != nil{
+		t.logger.Error().Err(err).Msg("error in process node sync keysign")
+		return nil, err
+	}
+
+	wrappedBroadCastMsg := p2p.WrappedMessage{
+		MessageType: messageType,
+		MsgID:       t.msgID,
+		Payload:     broadcastMsg,
+	}
+
+	stopChan := make(chan bool, len(peerIDs))
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		t.sendMsg(wrappedBroadCastMsg, t.P2PPeers)
+		for {
+			select {
+			case <-stopChan:
+				return
+			case <-time.After(time.Millisecond * 500):
+				t.sendMsg(wrappedBroadCastMsg, t.P2PPeers)
+			}
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case m := <-msgChan:
+				msgId := storeSignSyncMsg(threshold,m, peersMap)
+				if msgId == ""{
+					continue
+				}
+				peersList, ok := peersMap.Load(msgId)
+				if !ok{
+					t.logger.Error().Msg("error ")
+				}
+				// now we exchange and do the voting
+				broadcastMsg, err := json.Marshal(SignSyncMsg{
+					Type:  "PeerList",
+					MsgID: msgId,
+					Peers: peersList.([]peer.ID),
+				})
+				if err != nil{
+					t.logger.Error().Err(err).Msg("error in marsh the peer IDs")
+				}
+				wrappedBroadCastMsg := p2p.WrappedMessage{
+					MessageType: messageType,
+					MsgID:       t.msgID,
+					Payload:     broadcastMsg,
+				}
+				t.sendMsg(wrappedBroadCastMsg, t.P2PPeers)
+
+			//fixme we set the value to be 10 min
+			case <-time.After(time.Minute*10):
+				stopChan <- true
+				err = ErrNodeSync
+				return
+			}
+		}
+	}()
+
+
+	wg.Wait()
+
+}
+
 // signers sync function
 func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, messageType p2p.THORChainTSSMessageType) ([]string, error) {
 	var err error

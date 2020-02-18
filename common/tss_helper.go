@@ -4,12 +4,14 @@ import (
 	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"math/big"
 	"os"
+	"sync"
 
 	btss "github.com/binance-chain/tss-lib/tss"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -18,6 +20,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/btcd/btcec"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
+
+	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
 
 func Contains(s []*btss.PartyID, e *btss.PartyID) bool {
@@ -307,4 +311,27 @@ func NewBlame() Blame {
 func (b *Blame) SetBlame(reason string, nodes []string) {
 	b.FailReason = reason
 	b.BlameNodes = append(b.BlameNodes, nodes...)
+}
+
+func storeSignSyncMsg(threshold int, m *p2p.Message, peersMap sync.Map) string{
+	var syncMsg SignSyncMsg
+	majorityMsgID := ""
+	json.Unmarshal(m.Payload, &syncMsg)
+	switch syncMsg.Type {
+	case "EoI":
+		respPeer := m.PeerID
+		msgID := syncMsg.MsgID
+		val, ok := peersMap.Load(msgID)
+		if !ok {
+			peersList := []peer.ID{respPeer}
+			peersMap.Store(msgID, peersList)
+		}
+		peersList := val.([]peer.ID)
+		peersList = append(peersList, respPeer)
+		peersMap.Store(msgID, peersList)
+		if len(peersList) >= threshold{
+			majorityMsgID = msgID
+		}
+	}
+	return majorityMsgID
 }

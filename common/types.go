@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/binance-chain/tss-lib/ecdsa/keygen"
+	"github.com/libp2p/go-libp2p-core/peer"
 
 	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
@@ -38,6 +39,12 @@ type LocalCacheItem struct {
 type Blame struct {
 	FailReason string   `json:"fail_reason"`
 	BlameNodes []string `json:"blame_peers"`
+}
+
+type SignSyncMsg struct {
+	Type  string `json:"msg_type"`
+	MsgID string `json:"msg_id"`
+	Peers []peer.ID 'json: "peers'
 }
 
 // KeygenLocalStateItem
