@@ -55,6 +55,7 @@ func (ks *TssKeySign) onMessageReceived(buf []byte, remotePeer peer.ID) {
 		ks.logger.Error().Err(err).Msg("fail to unmarshal keygen message")
 		return
 	}
+	ks.logger.Info().Msgf("received message:%+v,routing info:%s", msg.Routing, msg.RoundInfo)
 	pi := ks.getPartyInfo()
 	if pi == nil {
 		ks.logger.Info().Msgf("local party is not ready yet, we could only leave a message")
@@ -64,6 +65,7 @@ func (ks *TssKeySign) onMessageReceived(buf []byte, remotePeer peer.ID) {
 	if !msg.Routing.IsBroadcast {
 		ks.logger.Info().Msg("message is not broadcast")
 		ks.onMessageValidated(&msg)
+		return
 	}
 	ks.validateMessage(&msg, remotePeer)
 }

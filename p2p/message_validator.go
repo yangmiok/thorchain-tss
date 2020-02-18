@@ -72,6 +72,8 @@ func (mv *MessageValidator) onReceivedMessage(buf []byte, remotePeer peer.ID) {
 }
 
 func (mv *MessageValidator) onConfirmMessage(msg *messages.ConfirmMessage, remotePeer peer.ID) {
+	mv.lock.Lock()
+	defer mv.lock.Unlock()
 	sm := mv.getStandbyMessage(msg.Key)
 	if nil == sm {
 		// someone confirm the message before we do
@@ -88,18 +90,15 @@ func (mv *MessageValidator) onConfirmMessage(msg *messages.ConfirmMessage, remot
 	}
 }
 func (mv *MessageValidator) removeStandbyMessage(key string) {
-	mv.lock.Lock()
-	defer mv.lock.Unlock()
+
 	delete(mv.cache, key)
 }
 func (mv *MessageValidator) getStandbyMessage(key string) *StandbyMessage {
-	mv.lock.Lock()
-	defer mv.lock.Unlock()
+
 	return mv.cache[key]
 }
 func (mv *MessageValidator) setStandbyMessage(key string, msg *StandbyMessage) {
-	mv.lock.Lock()
-	defer mv.lock.Unlock()
+
 	mv.cache[key] = msg
 }
 
@@ -115,6 +114,8 @@ func msgToHashString(msg []byte) (string, error) {
 
 // VerifyMessage add a message to local cache, and send messages to all the peers
 func (mv *MessageValidator) VerifyMessage(msg *WireMessage, peers []peer.ID) error {
+	mv.lock.Lock()
+	defer mv.lock.Unlock()
 	hash, err := msgToHashString(msg.Message)
 	if err != nil {
 		return fmt.Errorf("fail to generate hash from msg: %w", err)
