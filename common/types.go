@@ -15,6 +15,8 @@ const (
 	BlameHashCheck     = "hash check failed"
 	BlameNodeSyncCheck = "node sync failed"
 	BlameTssTimeout    = "Tss timeout"
+	syncMsgBroadcast   = "broadcast"
+	syncPeerList = "peerList"
 )
 
 var (
@@ -41,10 +43,15 @@ type Blame struct {
 	BlameNodes []string `json:"blame_peers"`
 }
 
+type KeySignProcessMsg struct {
+	processType string
+	msgID string
+}
+
 type SignSyncMsg struct {
-	Type  string `json:"msg_type"`
-	MsgID string `json:"msg_id"`
-	Peers []peer.ID 'json: "peers'
+	Type  string    `json:"msg_type"`
+	MsgID string    `json:"msg_id"`
+	Peers []peer.ID `json:"peers"`
 }
 
 // KeygenLocalStateItem

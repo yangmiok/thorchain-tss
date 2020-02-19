@@ -313,25 +313,84 @@ func (b *Blame) SetBlame(reason string, nodes []string) {
 	b.BlameNodes = append(b.BlameNodes, nodes...)
 }
 
-func storeSignSyncMsg(threshold int, m *p2p.Message, peersMap sync.Map) string{
+func processSignSyncMsg(msgId string, threshold int, m *p2p.Message, peersMap, sharedPeerMap *sync.Map) KeySignProcessMsg{
+
 	var syncMsg SignSyncMsg
+	var p2pWrappedMsg p2p.WrappedMessage
 	majorityMsgID := ""
-	json.Unmarshal(m.Payload, &syncMsg)
+	json.Unmarshal(m.Payload, &p2pWrappedMsg)
+	json.Unmarshal(p2pWrappedMsg.Payload, &syncMsg)
 	switch syncMsg.Type {
-	case "EoI":
+	case syncMsgBroadcast:
 		respPeer := m.PeerID
 		msgID := syncMsg.MsgID
 		val, ok := peersMap.Load(msgID)
 		if !ok {
 			peersList := []peer.ID{respPeer}
 			peersMap.Store(msgID, peersList)
+			return KeySignProcessMsg{}
 		}
 		peersList := val.([]peer.ID)
+		// if this node is already in my local peer list, just ignore and return
+		for _, each := range peersList{
+			if each == respPeer{
+				return KeySignProcessMsg{}
+			}
+		}
 		peersList = append(peersList, respPeer)
 		peersMap.Store(msgID, peersList)
-		if len(peersList) >= threshold{
+		if len(peersList) >= threshold {
 			majorityMsgID = msgID
+			return KeySignProcessMsg{
+				processType:syncMsgBroadcast,
+				msgID:majorityMsgID,
+			}
+		}
+
+	case syncPeerList:
+		respPeer := m.PeerID
+		if msgId != syncMsg.MsgID{
+			break
+		}
+
+		sharedPeerMap.Store(respPeer, syncMsg.Peers)
+		majorityPeersNum, ok := peersMap.Load(msgId)
+		if !ok{
+			return KeySignProcessMsg{}
+		}
+		length := 0
+		sharedPeerMap.Range(func(_, _ interface{}) bool {
+			length++
+			return true
+		})
+
+		if length == len(majorityPeersNum.([]peer.ID)){
+			// this indicate we need to do tallying now
+			fmt.Printf("222222222222222222>%d\n", length)
+			return KeySignProcessMsg{processType:syncPeerList,
+				msgID:syncMsg.MsgID}
 		}
 	}
-	return majorityMsgID
+	return KeySignProcessMsg{}
+}
+
+func genKeySignSyncMsg(typeMsg string, peers []peer.ID, msgId string, messageType p2p.THORChainTSSMessageType) (p2p.WrappedMessage, error) {
+
+	msg := SignSyncMsg{
+		Type:  typeMsg,
+		MsgID: msgId,
+		Peers: peers,
+	}
+	broadcastMsg, err := json.Marshal(msg)
+	if err != nil {
+		fmt.Printf("error!!!!!!!")
+		return p2p.WrappedMessage{}, err
+	}
+	wrappedBroadCastMsg := p2p.WrappedMessage{
+		MessageType: messageType,
+		MsgID:       msgId,
+		Payload:     broadcastMsg,
+	}
+
+	return wrappedBroadCastMsg, nil
 }

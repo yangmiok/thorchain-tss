@@ -113,8 +113,7 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 	tKeySign.tssCommonStruct.P2PPeers = common.GetPeersID(tKeySign.tssCommonStruct.PartyIDtoP2PID, tKeySign.tssCommonStruct.GetLocalPeerID())
 
 	//fixme current we set it just as the hash of the message
-	msgID, err := common.MsgToHashString(msgToSign)
-	standbyPeers, err := tKeySign.tssCommonStruct.NodeSyncKeySign(msgID,threshold,tKeySign.syncMsg, p2p.TSSKeySignSync)
+	standbyPeers, err := tKeySign.tssCommonStruct.NodeSyncKeySign(threshold, tKeySign.syncMsg, p2p.TSSKeySignSync)
 	if err != nil {
 		tKeySign.logger.Error().Err(err).Msg("node sync error")
 		if err == common.ErrNodeSync {
