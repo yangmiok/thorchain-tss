@@ -8,6 +8,7 @@ import (
 type KeySignReq struct {
 	PoolPubKey string `json:"pool_pub_key"` // pub key of the pool that we would like to send this message from
 	Message    string `json:"message"`      // base64 encoded message to be signed
+	SignersPubKey    []string `json:"signers_pub_key"`    // all the signers that involved in this round's signing
 }
 
 // KeySignResp key sign response
@@ -16,13 +17,6 @@ type KeySignResp struct {
 	S      string        `json:"s"`
 	Status common.Status `json:"status"`
 	Blame  common.Blame  `json:"blame"`
-}
-
-func NewKeySignReq(pk, msg string) KeySignReq {
-	return KeySignReq{
-		PoolPubKey: pk,
-		Message:    msg,
-	}
 }
 
 func NewKeySignResp(r, s string, status common.Status, blame common.Blame) KeySignResp {
