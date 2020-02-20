@@ -201,7 +201,13 @@ func (t *TssCommon) NodeSyncKeySign(threshold int, msgChan chan *p2p.Message, me
 						break
 					}
 					// now we exchange and do the voting
-					wrappedPeerExchangeMsg, err := genKeySignSyncMsg(syncPeerList, peersList.([]peer.ID), t.msgID, messageType)
+					localPeer,err := peer.IDFromString(t.GetLocalPeerID())
+					if err != nil{
+						break
+					}
+					peerSend := append(peersList.([]peer.ID), localPeer)
+					fmt.Printf("55555>>>>>>>>>>>>%v\n", peerSend)
+					wrappedPeerExchangeMsg, err := genKeySignSyncMsg(syncPeerList, peerSend, t.msgID, messageType)
 					if err != nil {
 						t.logger.Error().Err(err).Msg("error in generate the keysign sync message")
 						break
@@ -209,12 +215,8 @@ func (t *TssCommon) NodeSyncKeySign(threshold int, msgChan chan *p2p.Message, me
 					t.sendMsg(wrappedPeerExchangeMsg, t.P2PPeers)
 					retry = false
 				case syncPeerList:
-					length := 0
-					sharedPeersMap.Range(func(_, peerList interface{}) bool {
-						length += 1
-						fmt.Printf(">>>>yyyyyy>>>>>>%v\n", peerList)
-						return true
-					})
+					getPeersFromVoting(sharedPeersMap)
+
 				default:
 					t.logger.Debug().Msg("unknow message")
 

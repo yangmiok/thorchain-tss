@@ -394,3 +394,25 @@ func genKeySignSyncMsg(typeMsg string, peers []peer.ID, msgId string, messageTyp
 
 	return wrappedBroadCastMsg, nil
 }
+
+func getPeersFromVoting(sharedPeersMap sync.Map){
+	peerVotingMap := make(map[peer.ID]int)
+	sharedPeersMap.Range(func(_, peerList interface{}) bool {
+		for _, peer := range peerList.([]peer.ID){
+			votes, ok := peerVotingMap[peer]
+			if !ok {
+				peerVotingMap[peer] = 1
+				continue
+			}
+			votes +=1
+			peerVotingMap[peer] = votes
+		}
+		fmt.Printf(">>>>-------------->>>>>>\n")
+		fmt.Printf("%v\n", peerVotingMap)
+		fmt.Printf(">>>>-------------->>>>>>\n")
+		return true
+	})
+
+
+
+}
