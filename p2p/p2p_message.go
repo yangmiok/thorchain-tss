@@ -67,6 +67,13 @@ type BroadcastConfirmMessage struct {
 	Hash  string `json:"hash"`
 }
 
+// Node Sync message
+type NodeSyncMessage struct {
+	MsgType string `json:msg_type`
+	Identifier string `json:identifier`
+	OnlinePeers []peer.ID `json:online_peers"`
+}
+
 // WireMessage the message that produced by tss-lib package
 type WireMessage struct {
 	Routing   *btss.MessageRouting `json:"routing"`

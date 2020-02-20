@@ -47,6 +47,7 @@ type TssCommon struct {
 	P2PPeers            []peer.ID // most of tss message are broadcast, we store the peers ID to avoid iterating
 	BlamePeers          Blame
 	msgID               string
+	Coordinator         peer.ID
 }
 
 func NewTssCommon(peerID string, broadcastChannel chan *p2p.BroadcastMsgChan, conf TssConfig, msgID string) *TssCommon {
@@ -64,6 +65,7 @@ func NewTssCommon(peerID string, broadcastChannel chan *p2p.BroadcastMsgChan, co
 		P2PPeers:            nil,
 		BlamePeers:          NewBlame(),
 		msgID:               msgID,
+		Coordinator:         "",
 	}
 }
 
@@ -146,40 +148,95 @@ func (t *TssCommon) sendMsg(message p2p.WrappedMessage, peerIDs []peer.ID) {
 	})
 }
 
-// signers sync function
-func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, messageType p2p.THORChainTSSMessageType) ([]string, error) {
-	var err error
-	var standbyPeers []string
-	peersMap := make(map[string]bool)
+func (t *TssCommon) coordinate(targetMsgType string, msgChan chan *p2p.Message, p2pMessageType p2p.THORChainTSSMessageType, peersMap map[peer.ID]bool)error{
+	var syncMsg p2p.NodeSyncMessage
+	for {
+		select {
+		case m := <-msgChan:
+			json.Unmarshal(m.Payload,&syncMsg)
+			if syncMsg.MsgType == targetMsgType && syncMsg.Identifier == t.msgID {
+				peersMap[m.PeerID] = true
+				//we send the ack to this node
+				wrappedMsg, err := GenerateSyncMsg(SyncReqAck,t.P2PPeers, p2pMessageType,t.msgID)
+				if err != nil{
+					t.logger.Error().Err(err).Msg("error in generate the sync msg")
+				}
+				t.sendMsg(wrappedMsg, []peer.ID{m.PeerID})
+				if len(peersMap) == len(t.P2PPeers) {
+					// we notify all the peers to start keygen/keysign
+				    wrappedMsg, err := GenerateSyncMsg(SyncConfirmed,t.P2PPeers, p2pMessageType,t.msgID)
+				    if err != nil{
+				    	t.logger.Error().Err(err).Msg("error in generate the sync msg")
+					}
+					t.sendMsg(wrappedMsg, t.P2PPeers)
+				    return nil
+				}
+			}
+		case <-time.After(t.conf.SyncTimeout):
+			t.logger.Error().Err(ErrNodeSync).Msg("timeout in coordinate")
+			return ErrNodeSync
+		}
+	}
+}
 
+func (t *TssCommon) processRespFromCoordinator(syncMsg p2p.NodeSyncMessage, stopReqChan chan bool)([]peer.ID,error){
+	switch syncMsg.MsgType {
+	case SyncReqAck:
+		stopReqChan <- true
+		return t.P2PPeers,nil
+	case SyncConfirmed:
+		return t.P2PPeers,nil
+	case SyncFail:
+		return syncMsg.OnlinePeers,errors.New("sync failed")
+	default:
+		return nil,errors.New("unknow msg type from coordinator")
+	}
+}
+
+// signers sync function
+func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORChainTSSMessageType) ([]peer.ID, error) {
+	var err error
+	var standbyPeers []peer.ID
+	peersMap := make(map[peer.ID]bool)
 	peerIDs := t.P2PPeers
 	if len(peerIDs) == 0 {
 		t.logger.Error().Msg("fail to get any peer")
 		return standbyPeers, errors.New("fail to get any peer")
 	}
-	wrappedMsg := p2p.WrappedMessage{
-		MessageType: messageType,
-		MsgID:       t.msgID,
-		Payload:     []byte{0},
+	// I am the cooridinator
+	if t.GetLocalPeerID() == t.Coordinator.String(){
+		err := t.coordinate(SyncReq, msgChan, p2pMessageType, peersMap)
+		for k := range peersMap {
+			standbyPeers = append(standbyPeers, k)
+		}
+		if err != nil{
+			reqMsg, err := GenerateSyncMsg(SyncFail, standbyPeers, p2pMessageType,t.msgID)
+			if err != nil{
+				t.logger.Error().Err(err).Msg("error in generate the sync msg")
+			}
+			t.sendMsg(reqMsg, t.P2PPeers)
+		}
+		return standbyPeers, err
 	}
-	stopChan := make(chan bool, len(peerIDs))
+
+	// I am the peer
+	reqMsg, err := GenerateSyncMsg(SyncReq, nil, p2pMessageType,t.msgID)
+	if err != nil{
+		t.logger.Error().Err(err).Msg("error in generate the sync msg")
+	}
+	stopReqChan := make(chan bool, 1)
+
+	//I try to send the request to the coordinator until we get the ack or receive stop signal
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		t.sendMsg(wrappedMsg, t.P2PPeers)
-		i := 0
 		for {
 			select {
-			case <-stopChan:
+			case <-stopReqChan:
 				return
 			case <-time.After(time.Millisecond * 500):
-				t.sendMsg(wrappedMsg, t.P2PPeers)
-				i += 1
-			}
-			if i > t.conf.SyncRetry {
-				err = errors.New("too many errors in retry")
-				return
+				t.sendMsg(reqMsg, []peer.ID{t.Coordinator})
 			}
 		}
 	}()
@@ -190,24 +247,28 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, messageType p2p.THORChai
 		for {
 			select {
 			case m := <-msgChan:
-				peersMap[m.PeerID.String()] = true
-				if len(peersMap) == len(peerIDs) {
-					stopChan <- true
-					// we send the last sync msg before we quit
-					t.sendMsg(wrappedMsg, peerIDs)
+				var syncMsg p2p.NodeSyncMessage
+				json.Unmarshal(m.Payload, &syncMsg)
+				if syncMsg.Identifier != t.msgID{
+					t.logger.Debug().Msg("we received un-matched coordiantor message")
+					continue
+				}
+				standbyPeers, err = t.processRespFromCoordinator(syncMsg, stopReqChan)
+				if err != nil{
+					stopReqChan <- true
+					err = ErrNodeSync
 					return
 				}
+				return
+
 			case <-time.After(t.conf.SyncTimeout):
-				stopChan <- true
+				stopReqChan <- true
 				err = ErrNodeSync
 				return
 			}
 		}
 	}()
 	wg.Wait()
-	for k := range peersMap {
-		standbyPeers = append(standbyPeers, k)
-	}
 	return standbyPeers, err
 }
 

@@ -92,6 +92,13 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 		PartyIDMap: partyIDMap,
 	})
 	tKeyGen.tssCommonStruct.P2PPeers = common.GetPeersID(tKeyGen.tssCommonStruct.PartyIDtoP2PID, tKeyGen.tssCommonStruct.GetLocalPeerID())
+	// we set the coordinator of the keygen
+	tKeyGen.tssCommonStruct.Coordinator, err = tKeyGen.tssCommonStruct.GetCoordinator("")
+	if err != nil{
+		tKeyGen.logger.Error().Err(err).Msg("error in get the coordinator")
+		return nil, err
+	}
+
 	standbyPeers, err := tKeyGen.tssCommonStruct.NodeSync(tKeyGen.syncMsg, p2p.TSSKeyGenSync)
 	if err != nil {
 		tKeyGen.logger.Error().Err(err).Msg("node sync error")
