@@ -2,6 +2,7 @@ package keysign
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,20 +69,27 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode message(%s): %w", req.Message, err)
 	}
-	threshold, err := common.GetThreshold(len(storedKeyGenLocalStateItem.ParticipantKeys))
-	if err != nil {
-		return nil, err
-	}
+	threshold := len(req.SignersPubKey)-1
 	tKeySign.logger.Debug().Msgf("keysign threshold: %d", threshold)
-	partiesID, localPartyID, err := common.GetParties(storedKeyGenLocalStateItem.ParticipantKeys, storedKeyGenLocalStateItem.LocalPartyKey, false)
-	tKeySign.localParty = localPartyID
+
+	//partiesID, localPartyID, err := common.GetParties(req.SignersPubKey, storedKeyGenLocalStateItem.LocalPartyKey)
+
 	if err != nil {
+		if err == common.ErrNotActiveSigner{
+			tKeySign.logger.Info().Msgf("we are not in this rounds key sign")
+			return nil, nil
+		}
 		return nil, fmt.Errorf("fail to form key sign party: %w", err)
 	}
-	if !common.Contains(partiesID, localPartyID) {
-		tKeySign.logger.Info().Msgf("we are not in this rounds key sign")
-		return nil, nil
+
+	partiesID, localPartyID, err := common.GetParties(storedKeyGenLocalStateItem.ParticipantKeys, storedKeyGenLocalStateItem.LocalPartyKey)
+	if err != nil{
+		return nil, fmt.Errorf("fail to form key sign party: %w", err)
 	}
+
+
+
+	tKeySign.localParty = localPartyID
 
 	localKeyData, partiesID := common.ProcessStateFile(storedKeyGenLocalStateItem, partiesID)
 	// Set up the parameters
@@ -111,10 +119,15 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 	})
 
 	tKeySign.tssCommonStruct.P2PPeers = common.GetPeersID(tKeySign.tssCommonStruct.PartyIDtoP2PID, tKeySign.tssCommonStruct.GetLocalPeerID())
+
+	// we set the coordinator of the keygen
+	tKeySign.tssCommonStruct.Coordinator, err = tKeySign.tssCommonStruct.GetCoordinator(hex.EncodeToString(msgToSign))
+	if err != nil{
+		tKeySign.logger.Error().Err(err).Msg("error in get the coordinator")
+		return nil, err
+	}
 	standbyPeers, err := tKeySign.tssCommonStruct.NodeSync(tKeySign.syncMsg, p2p.TSSKeySignSync)
 	if err != nil {
-		tKeySign.logger.Error().Err(err).Msg("node sync error")
-		if err == common.ErrNodeSync {
 			tKeySign.logger.Error().Err(err).Msgf("the nodes online are +%v", standbyPeers)
 			_, blamePubKeys, err := tKeySign.tssCommonStruct.GetBlamePubKeysLists(standbyPeers)
 			if err != nil {
@@ -122,9 +135,10 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 				return nil, err
 			}
 			tKeySign.tssCommonStruct.BlamePeers.SetBlame(common.BlameNodeSyncCheck, blamePubKeys)
-		}
+
 		return nil, err
 	}
+	fmt.Printf("threshold is %d ----peerssssssssss--------%v\n",threshold, tKeySign.tssCommonStruct.P2PPeers)
 	// start the key sign
 	go func() {
 		if err := keySignParty.Start(); nil != err {

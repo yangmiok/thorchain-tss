@@ -26,6 +26,7 @@ var (
 	ErrHashFromPeer        = errors.New("hashcheck error from peer")
 	ErrTssTimeOut          = errors.New("error Tss Timeout")
 	ErrNodeSync            = errors.New("error nodesync Timeout")
+	ErrNotActiveSigner     = errors.New("local party is not in this signing round")
 )
 
 var NoBlame = Blame{}
@@ -48,7 +49,7 @@ type Blame struct {
 type KeygenLocalStateItem struct {
 	PubKey          string                    `json:"pub_key"`
 	LocalData       keygen.LocalPartySaveData `json:"local_data"`
-	ParticipantKeys []string                  `json:"participant_keys"` // the paticipant of last key gen
+	ParticipantKeys []string                  `json:"participant_keys"` // the  participants of last key gen
 	LocalPartyKey   string                    `json:"local_party_key"`
 }
 

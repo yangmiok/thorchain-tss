@@ -24,12 +24,12 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
 
-func Contains(s []*btss.PartyID, e *btss.PartyID) bool {
+func Contains(s []interface{}, e interface{}) bool {
 	if e == nil {
 		return false
 	}
 	for _, a := range s {
-		if *a == *e {
+		if a == e {
 			return true
 		}
 	}
