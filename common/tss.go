@@ -94,7 +94,7 @@ func GetPriKeyRawBytes(priKey cryptokey.PrivKey) ([]byte, error) {
 	return keyBytesArray[:], nil
 }
 
-func GetParties(keys []string, localPartyKey string) ([]*btss.PartyID, *btss.PartyID, error) {
+func GetParties(keys []string, selected []*big.Int, localPartyKey string) ([]*btss.PartyID, *btss.PartyID, error) {
 	var localPartyID *btss.PartyID
 	var unSortedPartiesID []*btss.PartyID
 	sort.Strings(keys)
@@ -109,6 +109,9 @@ func GetParties(keys []string, localPartyKey string) ([]*btss.PartyID, *btss.Par
 		// Note: The `id` and `moniker` fields are for convenience to allow you to easily track participants.
 		// The `id` should be a unique string representing this party in the network and `moniker` can be anything (even left blank).
 		// The `uniqueKey` is a unique identifying key for this peer (such as its p2p public key) as a big.Int.
+		//if selectedKeys != nil && Contains(selectedKeys, item) == false{
+		//	continue
+		//}
 		partyID := btss.NewPartyID(strconv.Itoa(idx), "", key)
 		if item == localPartyKey {
 			localPartyID = partyID
@@ -120,8 +123,20 @@ func GetParties(keys []string, localPartyKey string) ([]*btss.PartyID, *btss.Par
 	}
 
 	partiesID := btss.SortPartyIDs(unSortedPartiesID)
+	if selected ==  nil{
+		return partiesID, localPartyID, nil
+	}
 
-	return partiesID, localPartyID, nil
+	var keySignParties []*btss.PartyID
+	for _, each := range partiesID{
+		key := new(big.Int).SetBytes(each.Key[:])
+		if ContainKey(selected,key){
+			keySignParties = append(keySignParties, each)
+		}
+	}
+
+
+	return keySignParties, localPartyID, nil
 }
 
 func (t *TssCommon) renderToP2P(broadcastMsg *p2p.BroadcastMsgChan) {
@@ -139,30 +154,30 @@ func (t *TssCommon) sendMsg(message p2p.WrappedMessage, peerIDs []peer.ID) {
 	})
 }
 
-func (t *TssCommon) coordinate(targetMsgType string, msgChan chan *p2p.Message, p2pMessageType p2p.THORChainTSSMessageType, peersMap map[peer.ID]bool)error{
+func (t *TssCommon) coordinate(targetMsgType string, msgChan chan *p2p.Message, p2pMessageType p2p.THORChainTSSMessageType, peersMap map[peer.ID]bool) error {
 	var syncMsg p2p.NodeSyncMessage
 	var p2pWrappedMsg p2p.WrappedMessage
 	for {
 		select {
 		case m := <-msgChan:
-			json.Unmarshal(m.Payload,&p2pWrappedMsg)
+			json.Unmarshal(m.Payload, &p2pWrappedMsg)
 			json.Unmarshal(p2pWrappedMsg.Payload, &syncMsg)
 			if syncMsg.MsgType == targetMsgType && syncMsg.Identifier == t.msgID {
 				peersMap[m.PeerID] = true
 				//we send the ack to this node
-				wrappedMsg, err := GenerateSyncMsg(SyncReqAck,t.P2PPeers, p2pMessageType,t.msgID)
-				if err != nil{
+				wrappedMsg, err := GenerateSyncMsg(SyncReqAck, t.P2PPeers, p2pMessageType, t.msgID)
+				if err != nil {
 					t.logger.Error().Err(err).Msg("error in generate the sync msg")
 				}
 				t.sendMsg(wrappedMsg, []peer.ID{m.PeerID})
 				if len(peersMap) == len(t.P2PPeers) {
 					// we notify all the peers to start keygen/keysign
-				    wrappedMsg, err := GenerateSyncMsg(SyncConfirmed,t.P2PPeers, p2pMessageType,t.msgID)
-				    if err != nil{
-				    	t.logger.Error().Err(err).Msg("error in generate the sync msg")
+					wrappedMsg, err := GenerateSyncMsg(SyncConfirmed, t.P2PPeers, p2pMessageType, t.msgID)
+					if err != nil {
+						t.logger.Error().Err(err).Msg("error in generate the sync msg")
 					}
 					t.sendMsg(wrappedMsg, t.P2PPeers)
-				    return nil
+					return nil
 				}
 			}
 		case <-time.After(t.conf.SyncTimeout):
@@ -172,17 +187,17 @@ func (t *TssCommon) coordinate(targetMsgType string, msgChan chan *p2p.Message, 
 	}
 }
 
-func (t *TssCommon) processRespFromCoordinator(syncMsg p2p.NodeSyncMessage, stopReqChan chan bool)([]peer.ID,error){
+func (t *TssCommon) processRespFromCoordinator(syncMsg p2p.NodeSyncMessage, stopReqChan chan bool) ([]peer.ID, error) {
 	switch syncMsg.MsgType {
 	case SyncReqAck:
 		stopReqChan <- true
-		return t.P2PPeers,nil
+		return t.P2PPeers, nil
 	case SyncConfirmed:
-		return t.P2PPeers,nil
+		return t.P2PPeers, nil
 	case SyncFail:
-		return syncMsg.OnlinePeers,errors.New("sync failed")
+		return syncMsg.OnlinePeers, errors.New("sync failed")
 	default:
-		return nil,errors.New("unknow msg type from coordinator")
+		return nil, errors.New("unknow msg type from coordinator")
 	}
 }
 
@@ -197,25 +212,24 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 		return standbyPeers, errors.New("fail to get any peer")
 	}
 	// I am the cooridinator
-	if t.GetLocalPeerID() == t.Coordinator.String(){
+	if t.GetLocalPeerID() == t.Coordinator.String() {
 		err := t.coordinate(SyncReq, msgChan, p2pMessageType, peersMap)
 		for k := range peersMap {
 			standbyPeers = append(standbyPeers, k)
 		}
-		if err != nil{
-			reqMsg, err := GenerateSyncMsg(SyncFail, standbyPeers, p2pMessageType,t.msgID)
-			if err != nil{
+		if err != nil {
+			reqMsg, err := GenerateSyncMsg(SyncFail, standbyPeers, p2pMessageType, t.msgID)
+			if err != nil {
 				t.logger.Error().Err(err).Msg("error in generate the sync msg")
 			}
 			t.sendMsg(reqMsg, t.P2PPeers)
 		}
-		fmt.Printf("wwwwwwwwwwwwquit with online-=---->%v\n", standbyPeers)
 		return standbyPeers, err
 	}
 
 	// I am the peer
-	reqMsg, err := GenerateSyncMsg(SyncReq, nil, p2pMessageType,t.msgID)
-	if err != nil{
+	reqMsg, err := GenerateSyncMsg(SyncReq, nil, p2pMessageType, t.msgID)
+	if err != nil {
 		t.logger.Error().Err(err).Msg("error in generate the sync msg")
 	}
 	stopReqChan := make(chan bool, 1)
@@ -243,20 +257,19 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 			case m := <-msgChan:
 				var syncMsg p2p.NodeSyncMessage
 				var p2pWrappedMsg p2p.WrappedMessage
-				json.Unmarshal(m.Payload,&p2pWrappedMsg)
+				json.Unmarshal(m.Payload, &p2pWrappedMsg)
 				json.Unmarshal(p2pWrappedMsg.Payload, &syncMsg)
-				if syncMsg.Identifier != t.msgID{
+				if syncMsg.Identifier != t.msgID {
 					t.logger.Debug().Msg("we received un-matched coordinator message")
 					continue
 				}
 				standbyPeers, err = t.processRespFromCoordinator(syncMsg, stopReqChan)
-				if err != nil{
+				if err != nil {
 					stopReqChan <- true
 					err = ErrNodeSync
 					return
 				}
-				if syncMsg.MsgType == SyncConfirmed{
-					fmt.Printf("NNNNNNNNWWWWWWWWWQQQQQQQQQQQ\n")
+				if syncMsg.MsgType == SyncConfirmed {
 					stopReqChan <- true
 					return
 				}

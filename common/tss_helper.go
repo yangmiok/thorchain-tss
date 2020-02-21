@@ -24,17 +24,32 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
 
-func Contains(s []interface{}, e interface{}) bool {
-	if e == nil {
+func ContainKey(s []*big.Int, e *big.Int) bool {
+	if e == nil || e == nil {
 		return false
 	}
 	for _, a := range s {
-		if a == e {
+		if a.String() == e.String() {
 			return true
 		}
 	}
 	return false
 }
+
+func Contains(s []*btss.PartyID, e *btss.PartyID) bool {
+	if e == nil {
+		return false
+	}
+	for _, a := range s {
+		if *a == *e {
+			return true
+		}
+	}
+	return false
+}
+
+
+
 
 func GetThreshold(value int) (int, error) {
 	if value < 0 {

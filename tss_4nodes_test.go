@@ -163,7 +163,7 @@ func testKeySign(c *C, poolPubKey string, partyNum int) {
 	keySignReq := keysign.KeySignReq{
 		PoolPubKey: poolPubKey,
 		Message:    msg,
-		SignersPubKey: nil,
+		SignersPubKey: testPubKeys[:3],
 	}
 	request, err := json.Marshal(keySignReq)
 	c.Assert(err, IsNil)

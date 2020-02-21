@@ -6,15 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
 	"path/filepath"
 	"time"
 
 	"github.com/binance-chain/tss-lib/ecdsa/signing"
 	btss "github.com/binance-chain/tss-lib/tss"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	cryptokey "github.com/tendermint/tendermint/crypto"
+	"github.com/tendermint/tendermint/crypto/secp256k1"
 
 	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/p2p"
@@ -82,11 +85,26 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 		return nil, fmt.Errorf("fail to form key sign party: %w", err)
 	}
 
-	partiesID, localPartyID, err := common.GetParties(storedKeyGenLocalStateItem.ParticipantKeys, storedKeyGenLocalStateItem.LocalPartyKey)
+	selectedKey := make([]*big.Int, len(req.SignersPubKey))
+	for i, item := range req.SignersPubKey{
+	pk, err := sdk.GetAccPubKeyBech32(item)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get account pub key address(%s): %w", item, err)
+	}
+	secpPk := pk.(secp256k1.PubKeySecp256k1)
+	key := new(big.Int).SetBytes(secpPk[:])
+	selectedKey[i] = key
+	}
+
+	partiesID, localPartyID, err := common.GetParties(storedKeyGenLocalStateItem.ParticipantKeys, selectedKey,storedKeyGenLocalStateItem.LocalPartyKey)
 	if err != nil{
 		return nil, fmt.Errorf("fail to form key sign party: %w", err)
 	}
 
+	if !common.Contains(partiesID, localPartyID) {
+		tKeySign.logger.Info().Msgf("we are not in this rounds key sign")
+		return nil, nil
+	}
 
 
 	tKeySign.localParty = localPartyID
@@ -138,7 +156,6 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 
 		return nil, err
 	}
-	fmt.Printf("threshold is %d ----peerssssssssss--------%v\n",threshold, tKeySign.tssCommonStruct.P2PPeers)
 	// start the key sign
 	go func() {
 		if err := keySignParty.Start(); nil != err {
