@@ -93,13 +93,13 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 	})
 	tKeyGen.tssCommonStruct.P2PPeers = common.GetPeersID(tKeyGen.tssCommonStruct.PartyIDtoP2PID, tKeyGen.tssCommonStruct.GetLocalPeerID())
 	// we set the coordinator of the keygen
-	tKeyGen.tssCommonStruct.Coordinator, err = tKeyGen.tssCommonStruct.GetCoordinator("")
+	tKeyGen.tssCommonStruct.Coordinator, err = tKeyGen.tssCommonStruct.GetCoordinator("keygen")
 	if err != nil{
 		tKeyGen.logger.Error().Err(err).Msg("error in get the coordinator")
 		return nil, err
 	}
-
 	standbyPeers, err := tKeyGen.tssCommonStruct.NodeSync(tKeyGen.syncMsg, p2p.TSSKeyGenSync)
+	fmt.Printf("00000000we return with standby-----%v, and err is %v", standbyPeers, err)
 	if err != nil {
 		tKeyGen.logger.Error().Err(err).Msg("node sync error")
 		if err == common.ErrNodeSync {
@@ -115,7 +115,7 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 	}
 	// start keygen
 	go func() {
-		defer tKeyGen.logger.Info().Msg("keyGenParty finished")
+		defer tKeyGen.logger.Info().Msg("keyGenParty started")
 		if err := keyGenParty.Start(); nil != err {
 			tKeyGen.logger.Error().Err(err).Msg("fail to start keygen party")
 			close(errChan)

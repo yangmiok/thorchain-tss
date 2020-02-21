@@ -150,10 +150,12 @@ func (t *TssCommon) sendMsg(message p2p.WrappedMessage, peerIDs []peer.ID) {
 
 func (t *TssCommon) coordinate(targetMsgType string, msgChan chan *p2p.Message, p2pMessageType p2p.THORChainTSSMessageType, peersMap map[peer.ID]bool)error{
 	var syncMsg p2p.NodeSyncMessage
+	var p2pWrappedMsg p2p.WrappedMessage
 	for {
 		select {
 		case m := <-msgChan:
-			json.Unmarshal(m.Payload,&syncMsg)
+			json.Unmarshal(m.Payload,&p2pWrappedMsg)
+			json.Unmarshal(p2pWrappedMsg.Payload, &syncMsg)
 			if syncMsg.MsgType == targetMsgType && syncMsg.Identifier == t.msgID {
 				peersMap[m.PeerID] = true
 				//we send the ack to this node
@@ -216,6 +218,7 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 			}
 			t.sendMsg(reqMsg, t.P2PPeers)
 		}
+		fmt.Printf("wwwwwwwwwwwwquit with online-=---->%v\n", standbyPeers)
 		return standbyPeers, err
 	}
 
@@ -248,9 +251,11 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 			select {
 			case m := <-msgChan:
 				var syncMsg p2p.NodeSyncMessage
-				json.Unmarshal(m.Payload, &syncMsg)
+				var p2pWrappedMsg p2p.WrappedMessage
+				json.Unmarshal(m.Payload,&p2pWrappedMsg)
+				json.Unmarshal(p2pWrappedMsg.Payload, &syncMsg)
 				if syncMsg.Identifier != t.msgID{
-					t.logger.Debug().Msg("we received un-matched coordiantor message")
+					t.logger.Debug().Msg("we received un-matched coordinator message")
 					continue
 				}
 				standbyPeers, err = t.processRespFromCoordinator(syncMsg, stopReqChan)
@@ -259,7 +264,11 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 					err = ErrNodeSync
 					return
 				}
-				return
+				if syncMsg.MsgType == SyncConfirmed{
+					fmt.Printf("NNNNNNNNWWWWWWWWWQQQQQQQQQQQ\n")
+					stopReqChan <- true
+					return
+				}
 
 			case <-time.After(t.conf.SyncTimeout):
 				stopReqChan <- true

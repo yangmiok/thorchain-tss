@@ -12,7 +12,6 @@ import (
 	"math/big"
 	"os"
 	"sort"
-	"strings"
 
 	btss "github.com/binance-chain/tss-lib/tss"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -161,14 +160,28 @@ func AccPubKeysFromPartyIDs(partyIDs []string, partyIDMap map[string]*btss.Party
 
 // get the coordinator of a number of peers
 func (t *TssCommon) GetCoordinator(appendedMsg string)(peer.ID, error){
-	peersWithAppendix := []string{t.GetLocalPeerID()+"@"+appendedMsg}
-	for _, each := range t.P2PPeers{
-		peersWithAppendix = append(peersWithAppendix, each.String()+"@"+appendedMsg)
+	sortMap := make(map[string]peer.ID)
+	var indexArr []string
+	if len(t.P2PPeers) == 0{
+		return "", errors.New("empty p2p peers list")
 	}
-	sort.Strings(peersWithAppendix)
-	coordinatorStr:= strings.Split(peersWithAppendix[0], "@")[0]
-	coordinator,err := peer.IDFromString(coordinatorStr)
-	return coordinator, err
+
+	myPeerID, err := peer.IDB58Decode(t.GetLocalPeerID())
+	if err != nil{
+		fmt.Printf("WWWWWWCCCCCCNNNNNNNNNAAAAAA-----%v---\n", t.GetLocalPeerID())
+		return "", err
+	}
+	peers := append(t.P2PPeers, myPeerID)
+	for _, each := range peers{
+		index,err := MsgToHashString([]byte(each.String()+appendedMsg))
+		if err != nil{
+			return "", err
+		}
+		sortMap[index] = each
+		indexArr = append(indexArr, index)
+	}
+	sort.Strings(indexArr)
+	return sortMap[indexArr[0]], nil
 }
 
 // GetBlamePubKeysInList returns the nodes public key who are in the peer list
@@ -249,7 +262,7 @@ func (t *TssCommon) TssTimeoutBlame(localCachedItems []*LocalCacheItem) ([]strin
 			continue
 		}
 		for _, each := range el.GetPeers(){
-			peerID, err := peer.IDFromString(each)
+			peerID, err := peer.IDB58Decode(each)
 			if err != nil{
 				t.logger.Error().Err(err).Msg("fail in Tss Timeout Blame")
 				return nil, err
@@ -277,7 +290,7 @@ func (t *TssCommon) findBlamePeers(localCacheItem *LocalCacheItem, dataOwnerP2PI
 	localCacheItem.lock.Lock()
 	defer localCacheItem.lock.Unlock()
 	for P2PID, hashValue := range localCacheItem.ConfirmedList {
-		peerID, err := peer.IDFromString(P2PID)
+		peerID, err := peer.IDB58Decode(P2PID)
 		if err !=nil{
 			t.logger.Error().Err(err).Msg("error in find blame peers")
 			return nil, err
