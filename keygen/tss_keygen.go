@@ -94,15 +94,14 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 	tKeyGen.tssCommonStruct.P2PPeers = common.GetPeersID(tKeyGen.tssCommonStruct.PartyIDtoP2PID, tKeyGen.tssCommonStruct.GetLocalPeerID())
 	// we set the coordinator of the keygen
 	tKeyGen.tssCommonStruct.Coordinator, err = tKeyGen.tssCommonStruct.GetCoordinator("keygen")
+	fmt.Printf("-sdklfjkldsfj---------%v\n", tKeyGen.tssCommonStruct.Coordinator)
 	if err != nil{
 		tKeyGen.logger.Error().Err(err).Msg("error in get the coordinator")
 		return nil, err
 	}
 	standbyPeers, err := tKeyGen.tssCommonStruct.NodeSync(tKeyGen.syncMsg, p2p.TSSKeyGenSync)
-	fmt.Printf("00000000we return with standby-----%v, and err is %v", standbyPeers, err)
 	if err != nil {
 		tKeyGen.logger.Error().Err(err).Msg("node sync error")
-		if err == common.ErrNodeSync {
 			tKeyGen.logger.Error().Err(err).Msgf("the nodes online are +%v", standbyPeers)
 			_, blamePubKeys, err := tKeyGen.tssCommonStruct.GetBlamePubKeysLists(standbyPeers)
 			if err != nil {
@@ -110,7 +109,6 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 				return nil, err
 			}
 			tKeyGen.tssCommonStruct.BlamePeers.SetBlame(common.BlameNodeSyncCheck, blamePubKeys)
-		}
 		return nil, err
 	}
 	// start keygen

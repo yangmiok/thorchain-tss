@@ -273,8 +273,8 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 					stopReqChan <- true
 					return
 				}
-
-			case <-time.After(t.conf.SyncTimeout):
+			// we need to let the peers to have timeout 3 seconds later than the coordinator to avoid miss coordinator message.
+			case <-time.After(t.conf.SyncTimeout+time.Second*3):
 				stopReqChan <- true
 				err = ErrNodeSync
 				return

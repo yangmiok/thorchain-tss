@@ -183,7 +183,6 @@ func (t *TssCommon) GetCoordinator(appendedMsg string)(peer.ID, error){
 
 	myPeerID, err := peer.IDB58Decode(t.GetLocalPeerID())
 	if err != nil{
-		fmt.Printf("WWWWWWCCCCCCNNNNNNNNNAAAAAA-----%v---\n", t.GetLocalPeerID())
 		return "", err
 	}
 	peers := append(t.P2PPeers, myPeerID)
