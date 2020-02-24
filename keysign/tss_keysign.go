@@ -75,16 +75,6 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 	threshold := len(req.SignersPubKey) - 1
 	tKeySign.logger.Debug().Msgf("keysign threshold: %d", threshold)
 
-	//partiesID, localPartyID, err := common.GetParties(req.SignersPubKey, storedKeyGenLocalStateItem.LocalPartyKey)
-
-	if err != nil {
-		if err == common.ErrNotActiveSigner {
-			tKeySign.logger.Info().Msgf("we are not in this rounds key sign")
-			return nil, nil
-		}
-		return nil, fmt.Errorf("fail to form key sign party: %w", err)
-	}
-
 	selectedKey := make([]*big.Int, len(req.SignersPubKey))
 	for i, item := range req.SignersPubKey {
 		pk, err := sdk.GetAccPubKeyBech32(item)
@@ -100,14 +90,13 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 	if err != nil {
 		return nil, fmt.Errorf("fail to form key sign party: %w", err)
 	}
-
+	//ToDo we will ask the inactive signers to get the signature from the peer in the following pr.
 	if !common.Contains(partiesID, localPartyID) {
 		tKeySign.logger.Info().Msgf("we are not in this rounds key sign")
 		return nil, nil
 	}
 
 	tKeySign.localParty = localPartyID
-
 	localKeyData, partiesID := common.ProcessStateFile(storedKeyGenLocalStateItem, partiesID)
 	// Set up the parameters
 	// Note: The `id` and `moniker` fields are for convenience to allow you to easily track participants.
@@ -149,7 +138,7 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 		standbyPeers = common.RemoveCoordinator(standbyPeers, tKeySign.GetTssCommonStruct().Coordinator)
 		_, blamePubKeys, err := tKeySign.tssCommonStruct.GetBlamePubKeysLists(standbyPeers)
 		if err != nil {
-			tKeySign.logger.Error().Err(err).Msgf("error in get blame node pubkey +%w\n", errNodeSync)
+			tKeySign.logger.Error().Err(err).Msgf("error in get blame node pubkey +%v\n", errNodeSync)
 			return nil, errNodeSync
 		}
 		tKeySign.tssCommonStruct.BlamePeers.SetBlame(common.BlameNodeSyncCheck, blamePubKeys)

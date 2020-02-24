@@ -105,7 +105,7 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 		standbyPeers = common.RemoveCoordinator(standbyPeers, tKeyGen.GetTssCommonStruct().Coordinator)
 		_, blamePubKeys, err := tKeyGen.tssCommonStruct.GetBlamePubKeysLists(standbyPeers)
 		if err != nil {
-			tKeyGen.logger.Error().Err(err).Msgf("error in get blame node pubkey + %w", errNodeSync)
+			tKeyGen.logger.Error().Err(err).Msgf("error in get blame node pubkey + %v", errNodeSync)
 			return nil, errNodeSync
 		}
 		tKeyGen.tssCommonStruct.BlamePeers.SetBlame(common.BlameNodeSyncCheck, blamePubKeys)

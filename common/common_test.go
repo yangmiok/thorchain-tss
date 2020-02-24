@@ -110,35 +110,43 @@ func (t *TssTestSuite) TestContains(c *C) {
 	c.Assert(ret, Equals, false)
 }
 
-func doNodeSyncTest(c *C, peers []peer.ID, targets []peer.ID) {
+func doNodeSyncTest(c *C, peers, onlines []peer.ID, coordinator peer.ID, testCoordinator bool) {
 	tssCommonStruct := TssCommon{
 		PartyIDtoP2PID: nil,
 		TssMsg:         nil,
 		P2PPeers:       peers,
+		Coordinator:    coordinator,
+		msgID:          "fakeMsgID",
 	}
-	receiver := make(chan *p2p.Message, 4)
-	var expected []string
-	for _, each := range targets {
-		msg := p2p.Message{
-			PeerID:  each,
-			Payload: []byte("hello"),
-		}
+	receiver := make(chan *p2p.Message, 1)
+
+	syncMsg, err := GenerateSyncMsg(SyncFail, onlines, p2p.TSSKeyGenSync, "fakeMsgID")
+	c.Assert(err, IsNil)
+	msgByte, err := json.Marshal(syncMsg)
+	c.Assert(err, IsNil)
+
+	msg := p2p.Message{
+		PeerID:  coordinator,
+		Payload: msgByte,
+	}
+	if !testCoordinator {
 		receiver <- &msg
-		expected = append(expected, each.String())
 	}
 	returnedPeers, err := tssCommonStruct.NodeSync(receiver, p2p.TSSKeySignVerMsg)
-	sort.Strings(returnedPeers)
-	sort.Strings(expected)
-	c.Assert(returnedPeers, DeepEquals, expected)
-	if len(peers) == len(targets) {
-		c.Assert(err, IsNil)
-	} else {
-		c.Assert(err, NotNil)
+	var returnedPeersStr []string
+
+	for _, each := range returnedPeers {
+		returnedPeersStr = append(returnedPeersStr, each.String())
 	}
+	sort.Strings(returnedPeersStr)
+	c.Assert(returnedPeers, DeepEquals, onlines)
 }
 
 func (t *TssTestSuite) TestNodeSync(c *C) {
 	// in test, we pretend to be node1
+
+	coordinator, err := peer.IDB58Decode("QmehVYruznbyDZuHBV4vEHESpDevMoAovET6aJ9oRuEzWa")
+	c.Assert(err, IsNil)
 	node2, err := peer.IDB58Decode("16Uiu2HAmAWKWf5vnpiAhfdSQebTbbB3Bg35qtyG7Hr4ce23VFA8V")
 	c.Assert(err, IsNil)
 	node3, err := peer.IDB58Decode("16Uiu2HAm4TmEzUqy3q3Dv7HvdoSboHk5sFj2FH3npiN5vDbJC6gh")
@@ -146,14 +154,12 @@ func (t *TssTestSuite) TestNodeSync(c *C) {
 	node4, err := peer.IDB58Decode("16Uiu2HAm2FzqoUdS6Y9Esg2EaGcAG5rVe1r6BFNnmmQr2H3bqafa")
 	c.Assert(err, IsNil)
 
-	peers := []peer.ID{node2, node3, node4}
-	target := []peer.ID{node4}
-	doNodeSyncTest(c, peers, target)
-	target = []peer.ID{node2, node4}
-	doNodeSyncTest(c, peers, target)
-	// in the 4 nodes scenario, we need to have the response of 3 nodes(loopback msg is not broadcast in the p2p)
-	target = []peer.ID{node2, node3, node4}
-	doNodeSyncTest(c, peers, target)
+	peers := []peer.ID{node2, node3, node4, coordinator}
+	onlines := []peer.ID{node2, node3}
+	doNodeSyncTest(c, peers, onlines, coordinator, false)
+
+	// now we test the coordinator is not online
+	doNodeSyncTest(c, peers, nil, coordinator, true)
 }
 
 func (t *TssTestSuite) TestGetPriKey(c *C) {
@@ -164,7 +170,6 @@ func (t *TssTestSuite) TestGetPriKey(c *C) {
 	pk, err = GetPriKey(input)
 	c.Assert(err, NotNil)
 	c.Assert(pk, IsNil)
-	// pk, err = GetPriKey("MmVhNTI1ZDk3N2Y1NWU3OWM3M2JhNjZiNzM2NDU0ZGI2Mjc2NmU4ZTMzMzg2ZDlhZGM4YmI2MjE2NmRiMWFkMQ==")
 	pk, err = GetPriKey(testPriKey)
 	c.Assert(err, IsNil)
 	c.Assert(pk, NotNil)
@@ -181,7 +186,7 @@ func (t *TssTestSuite) TestTssProcessOutCh(c *C) {
 	conf := TssConfig{}
 	localTestPubKeys := make([]string, len(testPubKeys))
 	copy(localTestPubKeys, testPubKeys[:])
-	partiesID, localPartyID, err := GetParties(localTestPubKeys, testPubKeys[0], true)
+	partiesID, localPartyID, err := GetParties(localTestPubKeys, nil, testPubKeys[0])
 	c.Assert(err, IsNil)
 	messageRouting := btss.MessageRouting{
 		From:                    localPartyID,
@@ -279,7 +284,7 @@ func setupProcessVerMsgEnv(c *C, keyPool []string, partyNum int) (*TssCommon, []
 	localTestPubKeys := make([]string, partyNum)
 	copy(localTestPubKeys, keyPool[:partyNum])
 	// for the test, we choose the first pubic key as the test instance public key
-	partiesID, localPartyID, err := GetParties(localTestPubKeys, keyPool[0], true)
+	partiesID, localPartyID, err := GetParties(localTestPubKeys, nil, keyPool[0])
 	c.Assert(err, IsNil)
 	partyIDMap := SetupPartyIDMap(partiesID)
 	SetupIDMaps(partyIDMap, tssCommonStruct.PartyIDtoP2PID)
@@ -292,7 +297,7 @@ func setupProcessVerMsgEnv(c *C, keyPool []string, partyNum int) (*TssCommon, []
 		Party:      keyGenParty,
 		PartyIDMap: partyIDMap,
 	})
-	tssCommonStruct.SetLocalPeerID("fakeID")
+	tssCommonStruct.SetLocalPeerID("QmehVYruznbyDZuHBV4vEHESpDevMoAovET6aJ9oRuEzWa")
 	err = SetupIDMaps(partyIDMap, tssCommonStruct.PartyIDtoP2PID)
 	c.Assert(err, IsNil)
 	peerPartiesID := append(partiesID[:localPartyID.Index], partiesID[localPartyID.Index+1:]...)

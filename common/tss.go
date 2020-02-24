@@ -129,7 +129,7 @@ func GetParties(keys []string, selected []*big.Int, localPartyKey string) ([]*bt
 
 	var keySignParties []*btss.PartyID
 	for _, each := range partiesID {
-		key := new(big.Int).SetBytes(each.Key[:])
+		key := new(big.Int).SetBytes(each.Key)
 		if ContainKey(selected, key) {
 			keySignParties = append(keySignParties, each)
 		}
@@ -159,14 +159,23 @@ func (t *TssCommon) coordinate(targetMsgType string, msgChan chan *p2p.Message, 
 	for {
 		select {
 		case m := <-msgChan:
-			json.Unmarshal(m.Payload, &p2pWrappedMsg)
-			json.Unmarshal(p2pWrappedMsg.Payload, &syncMsg)
+			err := json.Unmarshal(m.Payload, &p2pWrappedMsg)
+			if err != nil {
+				t.logger.Error().Err(err).Msg("error in unmarshal p2pWrappedMsg")
+				continue
+			}
+			err = json.Unmarshal(p2pWrappedMsg.Payload, &syncMsg)
+			if err != nil {
+				t.logger.Error().Err(err).Msg("error in unmarshal syncMsg")
+				continue
+			}
 			if syncMsg.MsgType == targetMsgType && syncMsg.Identifier == t.msgID {
 				peersMap[m.PeerID] = true
-				//we send the ack to this node
-				wrappedMsg, err := GenerateSyncMsg(SyncReqAck, t.P2PPeers, p2pMessageType, t.msgID)
+				//we send the ack to this node, we ignore the online peers cause it make no sense in ack.
+				wrappedMsg, err := GenerateSyncMsg(SyncReqAck,nil , p2pMessageType, t.msgID)
 				if err != nil {
 					t.logger.Error().Err(err).Msg("error in generate the sync msg")
+					continue
 				}
 				t.sendMsg(wrappedMsg, []peer.ID{m.PeerID})
 				if len(peersMap) == len(t.P2PPeers) {
@@ -174,6 +183,7 @@ func (t *TssCommon) coordinate(targetMsgType string, msgChan chan *p2p.Message, 
 					wrappedMsg, err := GenerateSyncMsg(SyncConfirmed, t.P2PPeers, p2pMessageType, t.msgID)
 					if err != nil {
 						t.logger.Error().Err(err).Msg("error in generate the sync msg")
+						continue
 					}
 					t.sendMsg(wrappedMsg, t.P2PPeers)
 					return nil
@@ -190,19 +200,19 @@ func (t *TssCommon) processRespFromCoordinator(syncMsg p2p.NodeSyncMessage, stop
 	switch syncMsg.MsgType {
 	case SyncReqAck:
 		stopReqChan <- true
-		return t.P2PPeers, nil
+		return syncMsg.OnlinePeers, nil
 	case SyncConfirmed:
 		return t.P2PPeers, nil
 	case SyncFail:
 		return syncMsg.OnlinePeers, errors.New("sync failed")
 	default:
-		return nil, errors.New("unknow msg type from coordinator")
+		return nil, errors.New("unknown msg type from coordinator")
 	}
 }
 
 // signers sync function
 func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORChainTSSMessageType) ([]peer.ID, error) {
-	var err error
+	var syncErr error
 	var standbyPeers []peer.ID
 	peersMap := make(map[peer.ID]bool)
 	peerIDs := t.P2PPeers
@@ -210,7 +220,7 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 		t.logger.Error().Msg("fail to get any peer")
 		return standbyPeers, errors.New("fail to get any peer")
 	}
-	// I am the cooridinator
+	// I am the coordinator
 	if t.GetLocalPeerID() == t.Coordinator.String() {
 		err := t.coordinate(SyncReq, msgChan, p2pMessageType, peersMap)
 		for k := range peersMap {
@@ -220,6 +230,7 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 			reqMsg, err := GenerateSyncMsg(SyncFail, standbyPeers, p2pMessageType, t.msgID)
 			if err != nil {
 				t.logger.Error().Err(err).Msg("error in generate the sync msg")
+				return standbyPeers, err
 			}
 			t.sendMsg(reqMsg, t.P2PPeers)
 		}
@@ -256,8 +267,16 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 			case m := <-msgChan:
 				var syncMsg p2p.NodeSyncMessage
 				var p2pWrappedMsg p2p.WrappedMessage
-				json.Unmarshal(m.Payload, &p2pWrappedMsg)
-				json.Unmarshal(p2pWrappedMsg.Payload, &syncMsg)
+				err := json.Unmarshal(m.Payload, &p2pWrappedMsg)
+				if err != nil {
+					t.logger.Error().Err(err).Msg("error in unmarshal p2pWrappedMsg")
+					continue
+				}
+				err = json.Unmarshal(p2pWrappedMsg.Payload, &syncMsg)
+				if err != nil {
+					t.logger.Error().Err(err).Msg("error in unmarshal syncMsg")
+					continue
+				}
 				if syncMsg.Identifier != t.msgID {
 					t.logger.Debug().Msg("we received un-matched coordinator message")
 					continue
@@ -265,7 +284,7 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 				standbyPeers, err = t.processRespFromCoordinator(syncMsg, stopReqChan)
 				if err != nil {
 					stopReqChan <- true
-					err = ErrNodeSync
+					syncErr = ErrNodeSync
 					return
 				}
 				if syncMsg.MsgType == SyncConfirmed {
@@ -275,13 +294,13 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 			// we need to let the peers to have timeout 3 seconds later than the coordinator to avoid miss coordinator message.
 			case <-time.After(t.conf.SyncTimeout + time.Second*3):
 				stopReqChan <- true
-				err = ErrNodeSync
+				syncErr = ErrNodeSync
 				return
 			}
 		}
 	}()
 	wg.Wait()
-	return standbyPeers, err
+	return standbyPeers, syncErr
 }
 
 func getPeerIDFromPartyID(partyID *btss.PartyID) (peer.ID, error) {

@@ -25,7 +25,7 @@ import (
 )
 
 func ContainKey(s []*big.Int, e *big.Int) bool {
-	if e == nil || e == nil {
+	if s == nil || e == nil {
 		return false
 	}
 	for _, a := range s {
