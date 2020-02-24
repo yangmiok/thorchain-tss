@@ -83,7 +83,7 @@ func blameInclude(c *C, blames []string, targets []int) {
 	}
 }
 
-func doStartKeygen(c *C, i int, locker *sync.Mutex, requestGroup *sync.WaitGroup, request []byte, keyGenRespArr *[]*keygen.KeyGenResp) {
+func doStartKeygen(c *C, i int, locker *sync.Mutex, requestGroup *sync.WaitGroup, request []byte, keyGenRespMap map[int]*keygen.KeyGenResp) {
 	defer requestGroup.Done()
 	url := fmt.Sprintf("http://127.0.0.1:%d/keygen", baseTssPort+i)
 	respByte := sendTestRequest(c, url, request)
@@ -91,7 +91,7 @@ func doStartKeygen(c *C, i int, locker *sync.Mutex, requestGroup *sync.WaitGroup
 	err := json.Unmarshal(respByte, &tempResp)
 	c.Assert(err, IsNil)
 	locker.Lock()
-	*keyGenRespArr = append(*keyGenRespArr, &tempResp)
+	keyGenRespMap[i] = &tempResp
 	locker.Unlock()
 }
 
@@ -107,8 +107,8 @@ func doStartKeySign(c *C, i int, locker *sync.Mutex, requestGroup *sync.WaitGrou
 	locker.Unlock()
 }
 
-func testBlameNodeSync(c *C, testParties TestParties, coordinator int,reason string) {
-	var keyGenRespArr []*keygen.KeyGenResp
+func testBlameNodeSync(c *C, testParties TestParties, coordinator int, reason string) {
+	keyGenRespMap := make(map[int]*keygen.KeyGenResp)
 	var locker sync.Mutex
 	keyGenReq := keygen.KeyGenReq{
 		Keys: testPubKeys[:],
@@ -118,17 +118,31 @@ func testBlameNodeSync(c *C, testParties TestParties, coordinator int,reason str
 	requestGroup := sync.WaitGroup{}
 	for _, partyIndex := range testParties.honest {
 		requestGroup.Add(1)
-		go doStartKeygen(c, partyIndex, &locker, &requestGroup, request, &keyGenRespArr)
+		go doStartKeygen(c, partyIndex, &locker, &requestGroup, request, keyGenRespMap)
 	}
 	requestGroup.Wait()
-	blameNodes := append(testParties.malicious,coordinator)
-	for i := 0; i < len(testParties.honest); i++ {
-		if testParties.honest[i] == coordinator{
-			blameCheck(c, keyGenRespArr[i].Blame.BlameNodes, testParties.malicious)
-		}else{
-			blameCheck(c, keyGenRespArr[i].Blame.BlameNodes, blameNodes)
+
+	coordinatorMalicious := false
+	for _, each := range testParties.malicious {
+		if each == coordinator {
+			coordinatorMalicious = true
+			break
 		}
-		c.Assert(keyGenRespArr[i].Blame.FailReason, Equals, reason)
+	}
+	var blameNodes []int
+	if coordinatorMalicious {
+		blameNodes = testParties.malicious
+	} else {
+		blameNodes = append(testParties.malicious, coordinator)
+	}
+	for index, value := range keyGenRespMap {
+
+		if index == coordinator {
+			blameCheck(c, value.Blame.BlameNodes, testParties.malicious)
+		} else {
+			blameCheck(c, value.Blame.BlameNodes, blameNodes)
+		}
+		c.Assert(value.Blame.FailReason, Equals, reason)
 	}
 }
 
@@ -142,6 +156,7 @@ func checkNodeStatus(c *C, testParties TestParties, expected uint64) {
 			respByte := sendTestRequest(c, url, nil)
 			var tempResp common.TssStatus
 			err := json.Unmarshal(respByte, &tempResp)
+			fmt.Printf("------%v\n", string(respByte))
 			c.Assert(err, IsNil)
 			c.Assert(tempResp.FailedKeyGen, Equals, expected)
 		}(partyIndex)
@@ -156,21 +171,21 @@ func testNodeSyncBlame(c *C) {
 		honest:    []int{0, 1, 2},
 		malicious: []int{3},
 	}
-	testBlameNodeSync(c, testParties, coordinatorBlame,common.BlameNodeSyncCheck)
+	testBlameNodeSync(c, testParties, coordinatorBlame, common.BlameNodeSyncCheck)
 
-	//testParties = TestParties{
-	//	honest:    []int{1, 2},
-	//	malicious: []int{0, 3},
-	//}
-	//testBlameNodeSync(c, testParties, common.BlameNodeSyncCheck)
-	//
-	//testParties = TestParties{
-	//	honest:    []int{2},
-	//	malicious: []int{0, 1, 3},
-	//}
-	//testBlameNodeSync(c, testParties, common.BlameNodeSyncCheck)
-	//// we run node sync test 3 times, we expect to have 3 failure logged
-	//checkNodeStatus(c, testParties, 3)
+	testParties = TestParties{
+		honest:    []int{1, 2},
+		malicious: []int{0, 3},
+	}
+	testBlameNodeSync(c, testParties, coordinatorBlame, common.BlameNodeSyncCheck)
+
+	testParties = TestParties{
+		honest:    []int{2},
+		malicious: []int{0, 1, 3},
+	}
+	testBlameNodeSync(c, testParties, coordinatorBlame, common.BlameNodeSyncCheck)
+	// we run node sync test 3 times, we expect to have 3 failure logged
+	checkNodeStatus(c, testParties, 3)
 }
 
 func doObserveAndStop(c *C, testParties TestParties, expected int, cancel context.CancelFunc) {

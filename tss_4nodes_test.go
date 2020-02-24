@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -161,8 +162,8 @@ func testKeySign(c *C, poolPubKey string, partyNum int) {
 	var locker sync.Mutex
 	msg := base64.StdEncoding.EncodeToString([]byte("hello"))
 	keySignReq := keysign.KeySignReq{
-		PoolPubKey: poolPubKey,
-		Message:    msg,
+		PoolPubKey:    poolPubKey,
+		Message:       msg,
 		SignersPubKey: testPubKeys[:3],
 	}
 	request, err := json.Marshal(keySignReq)
@@ -196,6 +197,7 @@ func testKeySign(c *C, poolPubKey string, partyNum int) {
 func testKeyGen(c *C, partyNum int) string {
 	var keyGenRespArr []*keygen.KeyGenResp
 	var locker sync.Mutex
+	sort.Strings(testPubKeys[:])
 	keyGenReq := keygen.KeyGenReq{
 		Keys: testPubKeys[:],
 	}

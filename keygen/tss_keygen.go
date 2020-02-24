@@ -57,7 +57,7 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 	if err != nil {
 		return nil, fmt.Errorf("fail to genearte the key: %w", err)
 	}
-	partiesID, localPartyID, err := common.GetParties(keygenReq.Keys,nil,pubKey)
+	partiesID, localPartyID, err := common.GetParties(keygenReq.Keys, nil, pubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get keygen parties: %w", err)
 	}
@@ -94,22 +94,22 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 	tKeyGen.tssCommonStruct.P2PPeers = common.GetPeersID(tKeyGen.tssCommonStruct.PartyIDtoP2PID, tKeyGen.tssCommonStruct.GetLocalPeerID())
 	// we set the coordinator of the keygen
 	tKeyGen.tssCommonStruct.Coordinator, err = tKeyGen.tssCommonStruct.GetCoordinator("keygen")
-	fmt.Printf("-sdklfjkldsfj---------%v\n", tKeyGen.tssCommonStruct.Coordinator)
-	if err != nil{
+	if err != nil {
 		tKeyGen.logger.Error().Err(err).Msg("error in get the coordinator")
 		return nil, err
 	}
-	standbyPeers, err := tKeyGen.tssCommonStruct.NodeSync(tKeyGen.syncMsg, p2p.TSSKeyGenSync)
-	if err != nil {
+	standbyPeers, errNodeSync := tKeyGen.tssCommonStruct.NodeSync(tKeyGen.syncMsg, p2p.TSSKeyGenSync)
+	if errNodeSync != nil {
 		tKeyGen.logger.Error().Err(err).Msg("node sync error")
-			tKeyGen.logger.Error().Err(err).Msgf("the nodes online are +%v", standbyPeers)
-			_, blamePubKeys, err := tKeyGen.tssCommonStruct.GetBlamePubKeysLists(standbyPeers)
-			if err != nil {
-				tKeyGen.logger.Error().Err(err).Msg("error in get blame node pubkey")
-				return nil, err
-			}
-			tKeyGen.tssCommonStruct.BlamePeers.SetBlame(common.BlameNodeSyncCheck, blamePubKeys)
-		return nil, err
+		tKeyGen.logger.Error().Err(err).Msgf("the nodes online are +%v", standbyPeers)
+		standbyPeers = common.RemoveCoordinator(standbyPeers, tKeyGen.GetTssCommonStruct().Coordinator)
+		_, blamePubKeys, err := tKeyGen.tssCommonStruct.GetBlamePubKeysLists(standbyPeers)
+		if err != nil {
+			tKeyGen.logger.Error().Err(err).Msgf("error in get blame node pubkey + %w", errNodeSync)
+			return nil, errNodeSync
+		}
+		tKeyGen.tssCommonStruct.BlamePeers.SetBlame(common.BlameNodeSyncCheck, blamePubKeys)
+		return nil, errNodeSync
 	}
 	// start keygen
 	go func() {

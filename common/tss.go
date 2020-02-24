@@ -123,18 +123,17 @@ func GetParties(keys []string, selected []*big.Int, localPartyKey string) ([]*bt
 	}
 
 	partiesID := btss.SortPartyIDs(unSortedPartiesID)
-	if selected ==  nil{
+	if selected == nil {
 		return partiesID, localPartyID, nil
 	}
 
 	var keySignParties []*btss.PartyID
-	for _, each := range partiesID{
+	for _, each := range partiesID {
 		key := new(big.Int).SetBytes(each.Key[:])
-		if ContainKey(selected,key){
+		if ContainKey(selected, key) {
 			keySignParties = append(keySignParties, each)
 		}
 	}
-
 
 	return keySignParties, localPartyID, nil
 }
@@ -274,7 +273,7 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 					return
 				}
 			// we need to let the peers to have timeout 3 seconds later than the coordinator to avoid miss coordinator message.
-			case <-time.After(t.conf.SyncTimeout+time.Second*3):
+			case <-time.After(t.conf.SyncTimeout + time.Second*3):
 				stopReqChan <- true
 				err = ErrNodeSync
 				return

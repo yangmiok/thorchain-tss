@@ -48,9 +48,6 @@ func Contains(s []*btss.PartyID, e *btss.PartyID) bool {
 	return false
 }
 
-
-
-
 func GetThreshold(value int) (int, error) {
 	if value < 0 {
 		return 0, errors.New("negative input")
@@ -78,15 +75,15 @@ func GetPeersID(partyIDtoP2PID map[string]peer.ID, localPeerID string) []peer.ID
 	return peerIDs
 }
 
-func GenerateSyncMsg(syncMsgType string, onlinePeers []peer.ID,p2pMessageType p2p.THORChainTSSMessageType, msgID string,) (p2p.WrappedMessage, error){
+func GenerateSyncMsg(syncMsgType string, onlinePeers []peer.ID, p2pMessageType p2p.THORChainTSSMessageType, msgID string) (p2p.WrappedMessage, error) {
 
 	payload, err := json.Marshal(p2p.NodeSyncMessage{
-		MsgType:    syncMsgType,
-		Identifier: msgID,
+		MsgType:     syncMsgType,
+		Identifier:  msgID,
 		OnlinePeers: onlinePeers,
 	})
 	if err != nil {
-		return p2p.WrappedMessage{},err
+		return p2p.WrappedMessage{}, err
 	}
 
 	wrappedMsg := p2p.WrappedMessage{
@@ -94,7 +91,7 @@ func GenerateSyncMsg(syncMsgType string, onlinePeers []peer.ID,p2pMessageType p2
 		MsgID:       msgID,
 		Payload:     payload,
 	}
-	return wrappedMsg,nil
+	return wrappedMsg, nil
 }
 
 func SetupIDMaps(parties map[string]*btss.PartyID, partyIDtoP2PID map[string]peer.ID) error {
@@ -174,21 +171,21 @@ func AccPubKeysFromPartyIDs(partyIDs []string, partyIDMap map[string]*btss.Party
 }
 
 // get the coordinator of a number of peers
-func (t *TssCommon) GetCoordinator(appendedMsg string)(peer.ID, error){
+func (t *TssCommon) GetCoordinator(appendedMsg string) (peer.ID, error) {
 	sortMap := make(map[string]peer.ID)
 	var indexArr []string
-	if len(t.P2PPeers) == 0{
+	if len(t.P2PPeers) == 0 {
 		return "", errors.New("empty p2p peers list")
 	}
 
 	myPeerID, err := peer.IDB58Decode(t.GetLocalPeerID())
-	if err != nil{
+	if err != nil {
 		return "", err
 	}
 	peers := append(t.P2PPeers, myPeerID)
-	for _, each := range peers{
-		index,err := MsgToHashString([]byte(each.String()+appendedMsg))
-		if err != nil{
+	for _, each := range peers {
+		index, err := MsgToHashString([]byte(each.String() + appendedMsg))
+		if err != nil {
 			return "", err
 		}
 		sortMap[index] = each
@@ -238,14 +235,12 @@ func (t *TssCommon) getBlamePubKeysNotInList(peers []peer.ID) ([]string, error) 
 			partiesNotInList = append(partiesNotInList, partyID)
 		}
 	}
-
 	localPartyInfo := t.getPartyInfo()
 	partyIDMap := localPartyInfo.PartyIDMap
 	blamePubKeys, err := AccPubKeysFromPartyIDs(partiesNotInList, partyIDMap)
 	if err != nil {
 		return nil, err
 	}
-
 	return blamePubKeys, nil
 }
 
@@ -275,9 +270,9 @@ func (t *TssCommon) TssTimeoutBlame(localCachedItems []*LocalCacheItem) ([]strin
 		if len(t.P2PPeers) == el.TotalConfirmParty() {
 			continue
 		}
-		for _, each := range el.GetPeers(){
+		for _, each := range el.GetPeers() {
 			peerID, err := peer.IDB58Decode(each)
-			if err != nil{
+			if err != nil {
 				t.logger.Error().Err(err).Msg("fail in Tss Timeout Blame")
 				return nil, err
 			}
@@ -305,7 +300,7 @@ func (t *TssCommon) findBlamePeers(localCacheItem *LocalCacheItem, dataOwnerP2PI
 	defer localCacheItem.lock.Unlock()
 	for P2PID, hashValue := range localCacheItem.ConfirmedList {
 		peerID, err := peer.IDB58Decode(P2PID)
-		if err !=nil{
+		if err != nil {
 			t.logger.Error().Err(err).Msg("error in find blame peers")
 			return nil, err
 		}
@@ -382,4 +377,21 @@ func NewBlame() Blame {
 func (b *Blame) SetBlame(reason string, nodes []string) {
 	b.FailReason = reason
 	b.BlameNodes = append(b.BlameNodes, nodes...)
+}
+
+func RemoveCoordinator(standbyPeers []peer.ID, co peer.ID) []peer.ID {
+	if standbyPeers == nil {
+		return standbyPeers
+	}
+	pos := -1
+	for index, each := range standbyPeers {
+		if each == co {
+			pos = index
+		}
+	}
+	if pos == -1 {
+		return standbyPeers
+	}
+	standbyPeers = append(standbyPeers[:pos], standbyPeers[pos+1:]...)
+	return standbyPeers
 }

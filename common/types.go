@@ -14,10 +14,10 @@ const (
 	BlameHashCheck     = "hash check failed"
 	BlameNodeSyncCheck = "node sync failed"
 	BlameTssTimeout    = "Tss timeout"
-	SyncReq = "request for sync"
-	SyncReqAck = "Ack of sync request"
-	SyncConfirmed = "sync confirmed"
-	SyncFail = "sync has failed"
+	SyncReq            = "request for sync"
+	SyncReqAck         = "Ack of sync request"
+	SyncConfirmed      = "sync confirmed"
+	SyncFail           = "sync has failed"
 )
 
 var (
