@@ -182,6 +182,7 @@ func (t *TssCommon) coordinate(targetMsgType string, msgChan chan *p2p.Message, 
 					continue
 				}
 				t.sendMsg(wrappedMsg, []peer.ID{m.PeerID})
+				fmt.Printf("peers-----%v-----p2ptotoal:%v", len(peersMap), len(t.P2PPeers))
 				if len(peersMap) == len(t.P2PPeers) {
 					// we notify all the peers to start keygen/keysign
 					wrappedMsg, err := GenerateSyncMsg(SyncConfirmed, t.P2PPeers, p2pMessageType, t.msgID)
@@ -220,36 +221,37 @@ func (t *TssCommon) WaitForSignature(threshold int ,poolPubKey string, msgChan c
 	for {
 		select {
 		case m := <- msgChan:
-			fmt.Printf("sdklfdskfjklasjdfkl")
 			var signature p2p.SharedSignature
 			var p2pWrappedMsg p2p.WrappedMessage
-			if failed >= threshold{
+			if failed >= threshold-1{
 				return nil, errors.New("fail to get the signature from the signers")
 			}
 			err := json.Unmarshal(m.Payload, &p2pWrappedMsg)
 			if err != nil {
 				t.logger.Error().Err(err).Msg("error in unmarshal p2pWrappedMsg")
 				failed+=1
-				return nil, err
+				continue
 			}
 			err = json.Unmarshal(p2pWrappedMsg.Payload, &signature)
 			if err != nil {
 				t.logger.Error().Err(err).Msg("error in unmarshal syncMsg")
 				failed +=1
-				return nil, err
+				continue
 			}
-			// since the sequence of received signature is random, so we verify this signature against the message the sender claims
-			// if the sender is malicious, this signer will notified since it does not have this signed message, and waitting for
-			// the next keysign round.
+			if len(signature.Sig.Signature) == 0{
+				t.logger.Error().Err(err).Msg("error in get the signature")
+				failed +=1
+				continue
+			}
+			// since the sequence of received signature is random, so we verify this signature against the message the sender claims. If the sender is malicious, this signer will notified since it does not have this signed message, and waiting for the next keysign round.
 			ret, err :=verifySignature(poolPubKey, signature)
 			if err != nil || !ret{
 				t.logger.Error().Err(err).Msgf("fail to verify the signature from peer %f\n", m.PeerID.String())
 				failed += 1
+				continue
 			}
 			return &signature, nil
-
-		// though at least 2/3 signers are honest, and the honest nodes will notify the signature, we still set the
-		// timeout as 5 minutes in case non of the signers notify us.
+		// though at least 2/3 signers are honest, and the honest nodes will notify the signature, we still set the timeout as 5 minutes in case non of the signers notify us.
 		case <-time.After(time.Minute*5):
 			return nil, errors.New("error getting the signature timeout")
 		}
@@ -257,12 +259,18 @@ func (t *TssCommon) WaitForSignature(threshold int ,poolPubKey string, msgChan c
 	}
 }
 
-
-
 func (t *TssCommon) SendSignature(committeeID string, p2pMessageType p2p.THORChainTSSMessageType,msg string, sig *signing.SignatureData, targetPeers []peer.ID)error{
-	signature := p2p.SharedSignature{
-		Msg: msg,
-		Sig: *sig,
+	var signature p2p.SharedSignature
+	if sig == nil{
+		signature = p2p.SharedSignature{
+			Msg: msg,
+			Sig: signing.SignatureData{},
+		}
+	}else {
+		signature = p2p.SharedSignature{
+			Msg: msg,
+			Sig: *sig,
+		}
 	}
 	sigData,err :=json.Marshal(signature)
 	if err != nil{

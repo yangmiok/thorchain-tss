@@ -108,6 +108,7 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 		tKeySign.logger.Info().Msgf("we are not in this rounds key sign")
 		sharedSignature, err:=tKeySign.tssCommonStruct.WaitForSignature(threshold,req.PoolPubKey,tKeySign.signatureChan)
 		if err != nil{
+			tKeySign.tssCommonStruct.BlamePeers.SetBlame(common.BlameFailSigRecv, nil)
 			return nil, "",fmt.Errorf("fail to process key sign: %w", err)
 		}
 		return &sharedSignature.Sig, sharedSignature.Msg, nil

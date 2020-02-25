@@ -237,6 +237,9 @@ func (t *TssTestSuite) TestHttp4NodesTss(c *C) {
 	defer cleanUp(c, cancels, wg, partyNum)
 	// test key gen.
 	poolPubKey := testKeyGen(c, partyNum)
+
+	testKeySign(c, poolPubKey, partyNum-1)
+
 	// we test keygen and key sign running in parallel
 	var wgGenSign sync.WaitGroup
 	wgGenSign.Add(1)

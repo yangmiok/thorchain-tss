@@ -14,6 +14,7 @@ const (
 	BlameHashCheck     = "hash check failed"
 	BlameNodeSyncCheck = "node sync failed"
 	BlameTssTimeout    = "Tss timeout"
+	BlameFailSigRecv   ="fail to receive the signature"
 	SyncReq            = "request for sync"
 	SyncReqAck         = "Ack of sync request"
 	SyncConfirmed      = "sync confirmed"
