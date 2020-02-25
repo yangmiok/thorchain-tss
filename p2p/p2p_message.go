@@ -3,6 +3,7 @@ package p2p
 import (
 	"fmt"
 
+	"github.com/binance-chain/tss-lib/ecdsa/signing"
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
@@ -23,6 +24,8 @@ const (
 	TSSKeyGenSync
 	// TSSKEYSIGNSYNC is the message we create to sync the signers before keysign
 	TSSKeySignSync
+	// TSSSignature is the message we create to sync the signers before keysign
+	TSSSignature
 	// Unknown is the message indicates the undefined message type
 	Unknown
 )
@@ -72,6 +75,12 @@ type NodeSyncMessage struct {
 	MsgType     string    `json:"msg_type"`
 	Identifier  string    `json:"identifier"`
 	OnlinePeers []peer.ID `json:"online_peers"`
+}
+
+// Shared signature message to the inactive signers
+type SharedSignature struct {
+	Msg   string `json:"message"`
+	Sig   signing.SignatureData `json:"signature"`
 }
 
 // WireMessage the message that produced by tss-lib package

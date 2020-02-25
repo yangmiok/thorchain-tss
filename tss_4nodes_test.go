@@ -184,13 +184,10 @@ func testKeySign(c *C, poolPubKey string, partyNum int) {
 		}(i, request)
 	}
 	requestGroup.Wait()
-	// this first node should get the empty result
-	c.Assert(keySignRespArr[0].S, Equals, "")
-	// size of the signature should be 44
-	c.Assert(keySignRespArr[1].S, HasLen, 44)
-	for i := 1; i < partyNum-1; i++ {
-		c.Assert(keySignRespArr[i].S, Equals, keySignRespArr[i+1].S)
+
+	for i := 0; i < partyNum-1; i++ {
 		c.Assert(keySignRespArr[i].R, Equals, keySignRespArr[i+1].R)
+		c.Assert(keySignRespArr[i].S, Equals, keySignRespArr[i+1].S)
 	}
 }
 

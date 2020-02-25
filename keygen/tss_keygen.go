@@ -57,7 +57,7 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 	if err != nil {
 		return nil, fmt.Errorf("fail to genearte the key: %w", err)
 	}
-	partiesID, localPartyID, err := common.GetParties(keygenReq.Keys, nil, pubKey)
+	partiesID, _,localPartyID, err := common.GetParties(keygenReq.Keys, nil, pubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get keygen parties: %w", err)
 	}

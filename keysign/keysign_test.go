@@ -30,10 +30,10 @@ func (t *TssTestSuite) TestSignMessage(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(sk, NotNil)
 	keySignInstance := NewTssKeySign("", "", conf, sk, nil, nil, nil, "test")
-	signatureData, err := keySignInstance.SignMessage(req)
+	signatureData,_, err := keySignInstance.SignMessage(req)
 	c.Assert(err, NotNil)
 	c.Assert(signatureData, IsNil)
-	signatureData, err = keySignInstance.SignMessage(req)
+	signatureData,_, err = keySignInstance.SignMessage(req)
 	c.Assert(err, NotNil)
 	c.Assert(signatureData, IsNil)
 }

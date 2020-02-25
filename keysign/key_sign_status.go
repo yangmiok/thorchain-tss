@@ -13,14 +13,16 @@ type KeySignReq struct {
 
 // KeySignResp key sign response
 type KeySignResp struct {
+	Msg    string        `json:"message"`   // base64 encoded message that have been signed
 	R      string        `json:"r"`
 	S      string        `json:"s"`
 	Status common.Status `json:"status"`
 	Blame  common.Blame  `json:"blame"`
 }
 
-func NewKeySignResp(r, s string, status common.Status, blame common.Blame) KeySignResp {
+func NewKeySignResp(r, s, msg string, status common.Status, blame common.Blame) KeySignResp {
 	return KeySignResp{
+		Msg:   msg,
 		R:      r,
 		S:      s,
 		Status: status,

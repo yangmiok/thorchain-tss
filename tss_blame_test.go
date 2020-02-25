@@ -156,7 +156,6 @@ func checkNodeStatus(c *C, testParties TestParties, expected uint64) {
 			respByte := sendTestRequest(c, url, nil)
 			var tempResp common.TssStatus
 			err := json.Unmarshal(respByte, &tempResp)
-			fmt.Printf("------%v\n", string(respByte))
 			c.Assert(err, IsNil)
 			c.Assert(tempResp.FailedKeyGen, Equals, expected)
 		}(partyIndex)

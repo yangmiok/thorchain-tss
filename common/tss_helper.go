@@ -3,6 +3,7 @@ package common
 import (
 	"crypto/elliptic"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -96,7 +97,7 @@ func GenerateSyncMsg(syncMsgType string, onlinePeers []peer.ID, p2pMessageType p
 
 func SetupIDMaps(parties map[string]*btss.PartyID, partyIDtoP2PID map[string]peer.ID) error {
 	for id, party := range parties {
-		peerID, err := getPeerIDFromPartyID(party)
+		peerID, err := GetPeerIDFromPartyID(party)
 		if err != nil {
 			return err
 		}
@@ -394,4 +395,21 @@ func RemoveCoordinator(standbyPeers []peer.ID, co peer.ID) []peer.ID {
 	}
 	standbyPeers = append(standbyPeers[:pos], standbyPeers[pos+1:]...)
 	return standbyPeers
+}
+
+func verifySignature(pubkey string, sharedSignature p2p.SharedSignature)(bool, error){
+	pk, err := sdk.GetAccPubKeyBech32(pubkey)
+	if err != nil {
+		return false, err
+	}
+	secpPk := pk.(secp256k1.PubKeySecp256k1)
+
+	msgToSign, err := base64.StdEncoding.DecodeString(sharedSignature.Msg)
+	if err != nil {
+		return false,err
+	}
+
+	ret := secpPk.VerifyBytes(msgToSign, sharedSignature.Sig.Signature)
+	return ret, nil
+
 }

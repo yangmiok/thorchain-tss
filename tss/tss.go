@@ -171,33 +171,44 @@ func (t *TssServer) Start(ctx context.Context) error {
 	return nil
 }
 
-func (t *TssServer) requestToMsgId(request interface{}) (string, error) {
-	var dat []byte
+func getCommitteeID(keys []string)(string, error){
+	keyAccumulation := ""
+	sort.Strings(keys)
+	for _, el := range keys {
+		keyAccumulation += el
+	}
+	committeeID, err := common.MsgToHashString([]byte(keyAccumulation))
+	if err != nil {
+		return "", err
+	}
+	return committeeID, nil
+}
+
+func (t *TssServer) requestToMsgId(request interface{}) (string, string,error) {
 	switch value := request.(type) {
 	case keygen.KeyGenReq:
-		keyAccumulation := ""
-		keys := value.Keys
-		sort.Strings(keys)
-		for _, el := range keys {
-			keyAccumulation += el
-		}
-		dat = []byte(keyAccumulation)
+		committeeId, err := getCommitteeID(value.Keys)
+		msgId := committeeId
+		return msgId, committeeId, err
 	case keysign.KeySignReq:
 		msgToSign, err := base64.StdEncoding.DecodeString(value.Message)
 		if err != nil {
 			t.logger.Error().Err(err).Msg("error in decode the keysign req")
-			return "", err
+			return "", "",err
 		}
-		dat = msgToSign
+		msgID, err := common.MsgToHashString(msgToSign)
+		if err != nil {
+			t.logger.Error().Err(err).Msg("fail to hash the message")
+			return "", "",err
+		}
+		committeeId, err := getCommitteeID(value.SignersPubKey)
+		if err != nil {
+			t.logger.Error().Err(err).Msg("fail to hash the message")
+			return "", "",err
+		}
+		return msgID, committeeId, nil
 	default:
 		t.logger.Error().Msg("unknown request type")
-		return "", errors.New("unknown request type")
+		return "","", errors.New("unknown request type")
 	}
-
-	msgID, err := common.MsgToHashString(dat)
-	if err != nil {
-		t.logger.Error().Err(err).Msg("fail to hash the message")
-		return "", err
-	}
-	return msgID, nil
 }

@@ -245,6 +245,8 @@ func (c *Communication) readFromStream(stream network.Stream) {
 			}
 			c.logger.Debug().Msgf(">>>>>>>[%s] %s", wrappedMsg.MessageType, string(wrappedMsg.Payload))
 			channels, ok := c.subscribers[wrappedMsg.MessageType]
+			if wrappedMsg.MessageType == TSSSignature{
+			}
 			if !ok {
 				c.logger.Info().Msgf("no subscriber %s found for this message", wrappedMsg.MessageType.String())
 				continue

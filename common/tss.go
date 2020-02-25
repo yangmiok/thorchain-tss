@@ -15,6 +15,7 @@ import (
 
 	"github.com/binance-chain/go-sdk/common/types"
 	"github.com/binance-chain/tss-lib/crypto"
+	"github.com/binance-chain/tss-lib/ecdsa/signing"
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/btcsuite/btcd/btcec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -94,14 +95,14 @@ func GetPriKeyRawBytes(priKey cryptokey.PrivKey) ([]byte, error) {
 	return keyBytesArray[:], nil
 }
 
-func GetParties(keys []string, selected []*big.Int, localPartyKey string) ([]*btss.PartyID, *btss.PartyID, error) {
+func GetParties(keys []string, selected []*big.Int, localPartyKey string) ([]*btss.PartyID,[]*btss.PartyID, *btss.PartyID, error) {
 	var localPartyID *btss.PartyID
 	var unSortedPartiesID []*btss.PartyID
 	sort.Strings(keys)
 	for idx, item := range keys {
 		pk, err := sdk.GetAccPubKeyBech32(item)
 		if err != nil {
-			return nil, nil, fmt.Errorf("fail to get account pub key address(%s): %w", item, err)
+			return nil, nil,nil, fmt.Errorf("fail to get account pub key address(%s): %w", item, err)
 		}
 		secpPk := pk.(secp256k1.PubKeySecp256k1)
 		key := new(big.Int).SetBytes(secpPk[:])
@@ -119,23 +120,26 @@ func GetParties(keys []string, selected []*big.Int, localPartyKey string) ([]*bt
 		unSortedPartiesID = append(unSortedPartiesID, partyID)
 	}
 	if localPartyID == nil {
-		return nil, nil, ErrNotActiveSigner
+		return nil, nil,nil, ErrNotActiveSigner
 	}
 
 	partiesID := btss.SortPartyIDs(unSortedPartiesID)
 	if selected == nil {
-		return partiesID, localPartyID, nil
+		return partiesID, nil, localPartyID, nil
 	}
 
 	var keySignParties []*btss.PartyID
+	var nonKeySignParties []*btss.PartyID
 	for _, each := range partiesID {
 		key := new(big.Int).SetBytes(each.Key)
 		if ContainKey(selected, key) {
 			keySignParties = append(keySignParties, each)
+		}else{
+			nonKeySignParties = append(nonKeySignParties, each)
 		}
 	}
 
-	return keySignParties, localPartyID, nil
+	return keySignParties,nonKeySignParties, localPartyID, nil
 }
 
 func (t *TssCommon) renderToP2P(broadcastMsg *p2p.BroadcastMsgChan) {
@@ -208,6 +212,70 @@ func (t *TssCommon) processRespFromCoordinator(syncMsg p2p.NodeSyncMessage, stop
 	default:
 		return nil, errors.New("unknown msg type from coordinator")
 	}
+}
+
+// inactive signers wait for the signature
+func (t *TssCommon) WaitForSignature(threshold int ,poolPubKey string, msgChan chan *p2p.Message)(*p2p.SharedSignature, error){
+	failed := 0
+	for {
+		select {
+		case m := <- msgChan:
+			fmt.Printf("sdklfdskfjklasjdfkl")
+			var signature p2p.SharedSignature
+			var p2pWrappedMsg p2p.WrappedMessage
+			if failed >= threshold{
+				return nil, errors.New("fail to get the signature from the signers")
+			}
+			err := json.Unmarshal(m.Payload, &p2pWrappedMsg)
+			if err != nil {
+				t.logger.Error().Err(err).Msg("error in unmarshal p2pWrappedMsg")
+				failed+=1
+				return nil, err
+			}
+			err = json.Unmarshal(p2pWrappedMsg.Payload, &signature)
+			if err != nil {
+				t.logger.Error().Err(err).Msg("error in unmarshal syncMsg")
+				failed +=1
+				return nil, err
+			}
+			// since the sequence of received signature is random, so we verify this signature against the message the sender claims
+			// if the sender is malicious, this signer will notified since it does not have this signed message, and waitting for
+			// the next keysign round.
+			ret, err :=verifySignature(poolPubKey, signature)
+			if err != nil || !ret{
+				t.logger.Error().Err(err).Msgf("fail to verify the signature from peer %f\n", m.PeerID.String())
+				failed += 1
+			}
+			return &signature, nil
+
+		// though at least 2/3 signers are honest, and the honest nodes will notify the signature, we still set the
+		// timeout as 5 minutes in case non of the signers notify us.
+		case <-time.After(time.Minute*5):
+			return nil, errors.New("error getting the signature timeout")
+		}
+
+	}
+}
+
+
+
+func (t *TssCommon) SendSignature(committeeID string, p2pMessageType p2p.THORChainTSSMessageType,msg string, sig *signing.SignatureData, targetPeers []peer.ID)error{
+	signature := p2p.SharedSignature{
+		Msg: msg,
+		Sig: *sig,
+	}
+	sigData,err :=json.Marshal(signature)
+	if err != nil{
+		t.logger.Error().Err(err).Msg("error in marshal the signature to send")
+		return err
+	}
+	wrappedmsg := p2p.WrappedMessage{
+		MessageType: p2pMessageType,
+		MsgID:       committeeID,
+		Payload:     sigData,
+	}
+	t.sendMsg(wrappedmsg, targetPeers)
+	return nil
 }
 
 // signers sync function
@@ -303,7 +371,7 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 	return standbyPeers, syncErr
 }
 
-func getPeerIDFromPartyID(partyID *btss.PartyID) (peer.ID, error) {
+func GetPeerIDFromPartyID(partyID *btss.PartyID) (peer.ID, error) {
 	pkBytes := partyID.KeyInt().Bytes()
 	var pk secp256k1.PubKeySecp256k1
 	copy(pk[:], pkBytes)

@@ -16,7 +16,9 @@ func (t *TssServer) Keygen(req keygen.KeyGenReq) (keygen.KeyGenResp, error) {
 
 	status := common.Success
 
-	msgID, err := t.requestToMsgId(req)
+	// in keygen, the msgID is the same as committeeID, and committeeID is used in keysign to distinguish among
+	// different keysign groups.
+	msgID,_, err := t.requestToMsgId(req)
 	if err != nil {
 		return keygen.KeyGenResp{}, err
 	}
