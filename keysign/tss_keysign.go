@@ -57,6 +57,7 @@ func (tKeySign *TssKeySign) GetTssCommonStruct() *common.TssCommon {
 
 // signMessage
 func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData, error) {
+	tKeySign.logger.Info().Msgf("----keysign parties are %v\n", req.SignersPubKey)
 	if len(req.PoolPubKey) == 0 {
 		return nil, errors.New("empty pool pub key")
 	}

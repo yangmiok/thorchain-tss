@@ -53,6 +53,7 @@ func (tKeyGen *TssKeyGen) GetTssCommonStruct() *common.TssCommon {
 }
 
 func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, error) {
+	tKeyGen.logger.Info().Msgf("----keygen parties are %v\n", keygenReq.Keys)
 	pubKey, err := sdk.Bech32ifyAccPub(tKeyGen.priKey.PubKey())
 	if err != nil {
 		return nil, fmt.Errorf("fail to genearte the key: %w", err)
