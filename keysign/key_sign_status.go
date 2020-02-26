@@ -8,7 +8,7 @@ import (
 type KeySignReq struct {
 	PoolPubKey    string   `json:"pool_pub_key"`    // pub key of the pool that we would like to send this message from
 	Message       string   `json:"message"`         // base64 encoded message to be signed
-	SignersPubKey []string `json:"signers_pub_key"` // all the signers that involved in this round's signing
+	SignersPubKey []string `json:"signer_pub_keys"` // all the signers that involved in this round's signing
 }
 
 // KeySignResp key sign response
