@@ -172,6 +172,7 @@ func (ks *TssKeySign) getKeysignTimeout() time.Duration {
 func (ks *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan btss.Message, endCh <-chan signing.SignatureData, messageID string) (*signing.SignatureData, error) {
 	defer ks.logger.Info().Msg("key sign finished")
 	ks.logger.Info().Msg("start to read messages from local party")
+	defer ks.messageValidator.ClearMailbox(messageID)
 	keysignTimeout := ks.getKeysignTimeout()
 	for {
 		select {

@@ -178,6 +178,7 @@ func (kg *TssKeyGen) processKeyGen(errChan chan struct{},
 	defer kg.logger.Info().Msg("finished keygen process")
 	kg.logger.Info().Msg("start to read messages from local party")
 	keyGenTimeout := kg.getKeygenTimeout()
+	defer kg.messageValidator.ClearMailbox(messageID)
 	for {
 		select {
 		case <-errChan: // when keyGenParty return
@@ -188,6 +189,7 @@ func (kg *TssKeyGen) processKeyGen(errChan chan struct{},
 			// be aware this timeout only means how long we wait for the next message to be emit by the local party.
 			// this is not the overall keygen timeout
 			kg.logger.Error().Msgf("fail to generate key within %s", keyGenTimeout)
+
 			return nil, common.ErrTssTimeOut
 
 		case msg := <-outCh:

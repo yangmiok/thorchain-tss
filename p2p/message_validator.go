@@ -180,6 +180,11 @@ func (mv *MessageValidator) VerifyParkedMessages(messageID string, peers []peer.
 	return nil
 }
 
+// ClearMailbox the messages id related messages is not relevant anymore remove it
+func (mv *MessageValidator) ClearMailbox(messageID string) {
+	mv.messageBox.RemoveMessage(messageID)
+}
+
 // Start the validator
 func (mv *MessageValidator) Start() {
 	mv.messenger.Start()
