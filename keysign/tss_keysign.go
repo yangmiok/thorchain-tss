@@ -72,9 +72,16 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode message(%s): %w", req.Message, err)
 	}
-	threshold := len(req.SignersPubKey) - 1
+	threshold,err := common.GetThreshold(len(storedKeyGenLocalStateItem.ParticipantKeys))
+	if err != nil{
+		tKeySign.logger.Error().Err(err).Msg("fail to calculate the threshold")
+		return nil, errors.New("fail to calculate the threshold")
+	}
 	tKeySign.logger.Debug().Msgf("keysign threshold: %d", threshold)
-
+	if len(req.SignersPubKey)<=threshold{
+		tKeySign.logger.Error().Err(err).Msgf("not enough signers (needed=%d, signers=%d)",threshold+1, len(req.SignersPubKey))
+		return nil, errors.New("not enough signers")
+	}
 	selectedKey := make([]*big.Int, len(req.SignersPubKey))
 	for i, item := range req.SignersPubKey {
 		pk, err := sdk.GetAccPubKeyBech32(item)
