@@ -220,6 +220,8 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 		t.logger.Error().Msg("fail to get any peer")
 		return standbyPeers, errors.New("fail to get any peer")
 	}
+	t.logger.Info().Msgf("we are processing message %v\n", t.msgID)
+
 	// I am the coordinator
 	if t.GetLocalPeerID() == t.Coordinator.String() {
 		err := t.coordinate(SyncReq, msgChan, p2pMessageType, peersMap)

@@ -57,7 +57,7 @@ func (tKeySign *TssKeySign) GetTssCommonStruct() *common.TssCommon {
 
 // signMessage
 func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData, error) {
-	tKeySign.logger.Info().Msgf("----keysign parties are %v\n", req.SignersPubKey)
+	tKeySign.logger.Info().Msgf("For message: %v----keysign parties are %v\n",req.Message, req.SignersPubKey)
 	if len(req.PoolPubKey) == 0 {
 		return nil, errors.New("empty pool pub key")
 	}
@@ -136,6 +136,7 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 
 	// we set the coordinator of the keygen
 	tKeySign.tssCommonStruct.Coordinator, err = tKeySign.tssCommonStruct.GetCoordinator(hex.EncodeToString(msgToSign))
+	tKeySign.logger.Info().Msgf("---the coordinator is %v\n" ,tKeySign.tssCommonStruct.Coordinator)
 	if err != nil {
 		tKeySign.logger.Error().Err(err).Msg("error in get the coordinator")
 		return nil, err
