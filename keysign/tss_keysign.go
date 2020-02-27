@@ -57,7 +57,7 @@ func (tKeySign *TssKeySign) GetTssCommonStruct() *common.TssCommon {
 
 // signMessage
 func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData, error) {
-	tKeySign.logger.Info().Msgf("For message: %v----keysign parties are %v\n",req.Message, req.SignersPubKey)
+	tKeySign.logger.Info().Msgf("For message: %v----keysign parties are %v\n", req.Message, req.SignersPubKey)
 	if len(req.PoolPubKey) == 0 {
 		return nil, errors.New("empty pool pub key")
 	}
@@ -73,14 +73,14 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode message(%s): %w", req.Message, err)
 	}
-	threshold,err := common.GetThreshold(len(storedKeyGenLocalStateItem.ParticipantKeys))
-	if err != nil{
+	threshold, err := common.GetThreshold(len(storedKeyGenLocalStateItem.ParticipantKeys))
+	if err != nil {
 		tKeySign.logger.Error().Err(err).Msg("fail to calculate the threshold")
 		return nil, errors.New("fail to calculate the threshold")
 	}
 	tKeySign.logger.Debug().Msgf("keysign threshold: %d", threshold)
-	if len(req.SignersPubKey)<=threshold{
-		tKeySign.logger.Error().Err(err).Msgf("not enough signers (needed=%d, signers=%d)",threshold+1, len(req.SignersPubKey))
+	if len(req.SignersPubKey) <= threshold {
+		tKeySign.logger.Error().Err(err).Msgf("not enough signers (needed=%d, signers=%d)", threshold+1, len(req.SignersPubKey))
 		return nil, errors.New("not enough signers")
 	}
 	selectedKey := make([]*big.Int, len(req.SignersPubKey))
@@ -136,7 +136,7 @@ func (tKeySign *TssKeySign) SignMessage(req KeySignReq) (*signing.SignatureData,
 
 	// we set the coordinator of the keygen
 	tKeySign.tssCommonStruct.Coordinator, err = tKeySign.tssCommonStruct.GetCoordinator(hex.EncodeToString(msgToSign))
-	tKeySign.logger.Info().Msgf("---the coordinator is %v\n" ,tKeySign.tssCommonStruct.Coordinator)
+	tKeySign.logger.Info().Msgf("---the coordinator is %v\n", tKeySign.tssCommonStruct.Coordinator)
 	if err != nil {
 		tKeySign.logger.Error().Err(err).Msg("error in get the coordinator")
 		return nil, err

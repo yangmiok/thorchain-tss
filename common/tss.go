@@ -159,6 +159,10 @@ func (t *TssCommon) coordinate(targetMsgType string, msgChan chan *p2p.Message, 
 	for {
 		select {
 		case m := <-msgChan:
+			//we only process the messages sent from the peers
+			if !ContainPeers(t.P2PPeers, m.PeerID) {
+				continue
+			}
 			err := json.Unmarshal(m.Payload, &p2pWrappedMsg)
 			if err != nil {
 				t.logger.Error().Err(err).Msg("error in unmarshal p2pWrappedMsg")
@@ -172,7 +176,7 @@ func (t *TssCommon) coordinate(targetMsgType string, msgChan chan *p2p.Message, 
 			if syncMsg.MsgType == targetMsgType && syncMsg.Identifier == t.msgID {
 				peersMap[m.PeerID] = true
 				//we send the ack to this node, we ignore the online peers cause it make no sense in ack.
-				wrappedMsg, err := GenerateSyncMsg(SyncReqAck,nil , p2pMessageType, t.msgID)
+				wrappedMsg, err := GenerateSyncMsg(SyncReqAck, nil, p2pMessageType, t.msgID)
 				if err != nil {
 					t.logger.Error().Err(err).Msg("error in generate the sync msg")
 					continue
@@ -267,6 +271,10 @@ func (t *TssCommon) NodeSync(msgChan chan *p2p.Message, p2pMessageType p2p.THORC
 		for {
 			select {
 			case m := <-msgChan:
+				// we ensure that we only accept the sync message from the coordinator
+				if m.PeerID != t.Coordinator {
+					continue
+				}
 				var syncMsg p2p.NodeSyncMessage
 				var p2pWrappedMsg p2p.WrappedMessage
 				err := json.Unmarshal(m.Payload, &p2pWrappedMsg)

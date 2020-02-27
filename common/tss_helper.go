@@ -36,6 +36,18 @@ func ContainKey(s []*big.Int, e *big.Int) bool {
 	return false
 }
 
+func ContainPeers(s []peer.ID, e peer.ID) bool {
+	if s == nil {
+		return false
+	}
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
 func Contains(s []*btss.PartyID, e *btss.PartyID) bool {
 	if e == nil {
 		return false
