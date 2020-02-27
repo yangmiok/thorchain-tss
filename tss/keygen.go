@@ -11,8 +11,6 @@ import (
 )
 
 func (t *TssServer) Keygen(req keygen.KeyGenReq) (keygen.KeyGenResp, error) {
-	t.tssKeyGenLocker.Lock()
-	defer t.tssKeyGenLocker.Unlock()
 
 	status := common.Success
 

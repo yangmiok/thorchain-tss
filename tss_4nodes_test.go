@@ -133,9 +133,8 @@ func setupNodeForTest(c *C, partyNum int) ([]context.Context, []*tss.TssServer, 
 	conf := common.TssConfig{
 		KeyGenTimeout:   30 * time.Second,
 		KeySignTimeout:  30 * time.Second,
-		SyncTimeout:     5 * time.Second,
+		SyncTimeout:     10 * time.Second,
 		PreParamTimeout: 5 * time.Second,
-		SyncRetry:       20,
 	}
 	ctxs, cancels, localTss := setupContextAndNodes(c, partyNum, conf)
 	wg := sync.WaitGroup{}
@@ -157,19 +156,19 @@ func sendTestRequest(c *C, url string, request []byte) []byte {
 	return body
 }
 
-func testKeySign(c *C, poolPubKey string, partyNum int) {
+func testKeySign(c *C, message, poolPubKey string, keysignPartyNum int, testPubKeys []string) {
 	var keySignRespArr []*keysign.KeySignResp
 	var locker sync.Mutex
-	msg := base64.StdEncoding.EncodeToString([]byte("hello"))
+	msg := base64.StdEncoding.EncodeToString([]byte(message))
 	keySignReq := keysign.KeySignReq{
 		PoolPubKey:    poolPubKey,
 		Message:       msg,
-		SignersPubKey: testPubKeys[:3],
+		SignersPubKey: testPubKeys,
 	}
 	request, err := json.Marshal(keySignReq)
 	c.Assert(err, IsNil)
 	requestGroup := sync.WaitGroup{}
-	for i := 0; i < partyNum; i++ {
+	for i := 0; i < keysignPartyNum; i++ {
 		requestGroup.Add(1)
 		go func(i int, request []byte) {
 			defer requestGroup.Done()
@@ -184,6 +183,13 @@ func testKeySign(c *C, poolPubKey string, partyNum int) {
 		}(i, request)
 	}
 	requestGroup.Wait()
+	if keysignPartyNum != partyNum {
+		for i := 0; i < keysignPartyNum-1; i++ {
+			c.Assert(keySignRespArr[i].S, Equals, keySignRespArr[i+1].S)
+			c.Assert(keySignRespArr[i].R, Equals, keySignRespArr[i+1].R)
+		}
+		return
+	}
 	// this first node should get the empty result
 	c.Assert(keySignRespArr[0].S, Equals, "")
 	// size of the signature should be 44
@@ -194,7 +200,7 @@ func testKeySign(c *C, poolPubKey string, partyNum int) {
 	}
 }
 
-func testKeyGen(c *C, partyNum int) string {
+func testKeyGen(c *C, partyNum int, testPubKeys []string) string {
 	var keyGenRespArr []*keygen.KeyGenResp
 	var locker sync.Mutex
 	sort.Strings(testPubKeys[:])
@@ -239,22 +245,49 @@ func (t *TssTestSuite) TestHttp4NodesTss(c *C) {
 	_, _, cancels, wg := setupNodeForTest(c, partyNum)
 	defer cleanUp(c, cancels, wg, partyNum)
 	// test key gen.
-	poolPubKey := testKeyGen(c, partyNum)
+	poolPubKey := testKeyGen(c, partyNum, testPubKeys[:])
 	// we test keygen and key sign running in parallel
 	var wgGenSign sync.WaitGroup
 	wgGenSign.Add(1)
 	go func() {
 		defer wgGenSign.Done()
 		// test key sign.
-		testKeySign(c, poolPubKey, partyNum)
+		testKeySign(c, "hello", poolPubKey, partyNum, testPubKeys[:3])
 	}()
 	wgGenSign.Add(1)
 	go func() {
 		defer wgGenSign.Done()
 		// test key gen.
-		testKeyGen(c, partyNum)
+		testKeyGen(c, partyNum, testPubKeys[:])
 	}()
 	wgGenSign.Wait()
+
+	// now we test the keygen in parallel
+	testKeyGenGroups := [][]string{testPubKeys[:3], testPubKeys[1:4]}
+	for i := 0; i < 2; i++ {
+		wgGenSign.Add(1)
+		go func(testPubKeys []string) {
+			defer wgGenSign.Done()
+			// test key gen.
+			testKeyGen(c, partyNum-1, testPubKeys)
+		}(testKeyGenGroups[i])
+	}
+	wgGenSign.Wait()
+
+	// now we test the keysign in parallel
+	// 1. same message with different parties. 2. different parties with different message
+	testKeySignGroups := [][]string{testPubKeys[:3], testPubKeys[1:4], testPubKeys[:3]}
+	messages := []string{"aa", "aa", "bb"}
+	for i := 0; i < 3; i++ {
+		wgGenSign.Add(1)
+		go func(testPubKeys []string, message string) {
+			defer wgGenSign.Done()
+			// test key gen.
+			testKeySign(c, message, poolPubKey, partyNum-1, testPubKeys)
+		}(testKeySignGroups[i], messages[i])
+	}
+	wgGenSign.Wait()
+
 }
 
 // This test is to test whether p2p has unregister all the resources when Tss instance is terminated.
@@ -266,5 +299,5 @@ func (t *TssTestSuite) TestHttpRedoKeyGen(c *C) {
 	_, _, cancels, wg := setupNodeForTest(c, partyNum)
 	defer cleanUp(c, cancels, wg, partyNum)
 	// test key gen.
-	testKeyGen(c, partyNum)
+	testKeyGen(c, partyNum, testPubKeys[:])
 }

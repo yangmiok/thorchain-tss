@@ -11,8 +11,6 @@ import (
 )
 
 func (t *TssServer) KeySign(req keysign.KeySignReq) (keysign.KeySignResp, error) {
-	t.tssKeySignLocker.Lock()
-	defer t.tssKeySignLocker.Unlock()
 
 	keySignFlag := common.Success
 

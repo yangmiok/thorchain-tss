@@ -50,7 +50,6 @@ func setupNodeBlameForTest(c *C, partyNum int) ([]context.Context, []*tss.TssSer
 		KeySignTimeout:  time.Second * 5,
 		SyncTimeout:     time.Second * 2,
 		PreParamTimeout: time.Second * 5,
-		SyncRetry:       10,
 	}
 	ctxs, cancels, localTss := setupContextAndNodes(c, partyNum, conf)
 	wg := sync.WaitGroup{}
@@ -268,7 +267,7 @@ func (t *BlameTestSuite) TestNodeSyncAndTimeoutBlame(c *C) {
 
 	testNodeSyncBlame(c)
 
-	poolPubKey := testKeyGen(c, partyNum)
+	poolPubKey := testKeyGen(c, partyNum, testPubKeys[:])
 	// we choose key sign to test blame because keysign have more rounds and easy for us to catch the stop point
 	testKeySignBlameTimeout(c, poolPubKey, cancels)
 }

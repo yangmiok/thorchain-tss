@@ -33,8 +33,6 @@ type TssServer struct {
 	priKey           cryptokey.PrivKey
 	preParams        *bkeygen.LocalPreParams
 	wg               sync.WaitGroup
-	tssKeyGenLocker  *sync.Mutex
-	tssKeySignLocker *sync.Mutex
 	stopChan         chan struct{}
 	subscribers      map[string]chan *p2p.Message
 	homeBase         string
@@ -84,8 +82,6 @@ func NewTss(
 		p2pCommunication: P2PServer,
 		priKey:           priKey,
 		preParams:        preParams,
-		tssKeyGenLocker:  &sync.Mutex{},
-		tssKeySignLocker: &sync.Mutex{},
 		stopChan:         make(chan struct{}),
 		subscribers:      make(map[string]chan *p2p.Message),
 		homeBase:         baseFolder,

@@ -71,8 +71,6 @@ type TssConfig struct {
 	SyncTimeout time.Duration
 	// Pre-parameter define the pre-parameter generations timeout
 	PreParamTimeout time.Duration
-	// SyncRetry defines how many times we try to sync the peers
-	SyncRetry int
 }
 
 type TssStatus struct {
