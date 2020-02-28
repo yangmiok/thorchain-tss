@@ -11,7 +11,6 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client/input"
 	golog "github.com/ipfs/go-log"
-	"github.com/whyrusleeping/go-logging"
 
 	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/p2p"
@@ -26,7 +25,7 @@ func main() {
 		return
 	}
 	// Setup logging
-	golog.SetAllLoggers(logging.INFO)
+	golog.SetAllLoggers(golog.LevelInfo)
 	_ = golog.SetLogLevel("tss-lib", "INFO")
 	common.InitLog(generalConf.LogLevel, generalConf.Pretty, "tss_service")
 
