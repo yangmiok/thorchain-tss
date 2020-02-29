@@ -23,14 +23,15 @@ type TssKeyGen struct {
 	priKey          cryptokey.PrivKey
 	preParams       *bkeygen.LocalPreParams
 	tssCommonStruct *common.TssCommon
-	stopChan        *chan struct{} // channel to indicate whether we should stop
+	stopChan        chan struct{} // channel to indicate whether we should stop
 	homeBase        string
 	syncMsg         chan *p2p.Message
 	localParty      *btss.PartyID
 	keygenCurrent   *string
+	commStopChan    chan struct{}
 }
 
-func NewTssKeyGen(homeBase, localP2PID string, conf common.TssConfig, privKey cryptokey.PrivKey, broadcastChan chan *p2p.BroadcastMsgChan, stopChan *chan struct{}, preParam *bkeygen.LocalPreParams, keygenCurrent *string, msgID string) TssKeyGen {
+func NewTssKeyGen(homeBase, localP2PID string, conf common.TssConfig, privKey cryptokey.PrivKey, broadcastChan chan *p2p.BroadcastMsgChan, stopChan chan struct{}, preParam *bkeygen.LocalPreParams, keygenCurrent *string, msgID string) TssKeyGen {
 	return TssKeyGen{
 		logger:          log.With().Str("module", "keyGen").Logger(),
 		priKey:          privKey,
@@ -41,6 +42,7 @@ func NewTssKeyGen(homeBase, localP2PID string, conf common.TssConfig, privKey cr
 		syncMsg:         make(chan *p2p.Message),
 		localParty:      nil,
 		keygenCurrent:   keygenCurrent,
+		commStopChan:    make(chan struct{}),
 	}
 }
 
@@ -120,14 +122,40 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq KeyGenReq) (*crypto.ECPoint, 
 			close(errChan)
 		}
 	}()
-
+	go tKeyGen.processInboundMessages()
 	r, err := tKeyGen.processKeyGen(errChan, outCh, endCh, keyGenLocalStateItem)
 	return r, err
 }
 
+func (tKeyGen *TssKeyGen) processInboundMessages() {
+	tKeyGen.logger.Info().Msg("start processing inbound messages")
+	defer tKeyGen.logger.Info().Msg("stop processing inbound messages")
+	for {
+		select {
+		case <-tKeyGen.commStopChan:
+			return
+		case m, ok := <-tKeyGen.tssCommonStruct.TssMsg:
+			if !ok {
+				return
+			}
+			var wrappedMsg p2p.WrappedMessage
+			if err := json.Unmarshal(m.Payload, &wrappedMsg); nil != err {
+				tKeyGen.logger.Error().Err(err).Msg("fail to unmarshal wrapped message bytes")
+				continue
+			}
+
+			if err := tKeyGen.tssCommonStruct.ProcessOneMessage(&wrappedMsg, m.PeerID.String()); err != nil {
+				tKeyGen.logger.Error().Err(err).Msg("fail to process the received message")
+			}
+		}
+	}
+}
+
+
 func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{}, outCh <-chan btss.Message, endCh <-chan bkeygen.LocalPartySaveData, keyGenLocalStateItem common.KeygenLocalStateItem) (*crypto.ECPoint, error) {
 	defer tKeyGen.logger.Info().Msg("finished keygen process")
 	tKeyGen.logger.Info().Msg("start to read messages from local party")
+	defer close(tKeyGen.commStopChan)
 	tssConf := tKeyGen.tssCommonStruct.GetConf()
 	for {
 		select {
@@ -136,7 +164,7 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{}, outCh <-chan btss
 			close(tKeyGen.tssCommonStruct.TssMsg)
 			return nil, errors.New("error channel closed fail to start local party")
 
-		case <-*tKeyGen.stopChan: // when TSS processor receive signal to quit
+		case <-tKeyGen.stopChan: // when TSS processor receive signal to quit
 			close(tKeyGen.tssCommonStruct.TssMsg)
 			return nil, errors.New("received exit signal")
 
@@ -163,34 +191,6 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{}, outCh <-chan btss
 			err := tKeyGen.tssCommonStruct.ProcessOutCh(msg, p2p.TSSKeyGenMsg)
 			if err != nil {
 				return nil, err
-			}
-
-		case m, ok := <-tKeyGen.tssCommonStruct.TssMsg:
-			if !ok {
-				return nil, nil
-			}
-			var wrappedMsg p2p.WrappedMessage
-			if err := json.Unmarshal(m.Payload, &wrappedMsg); nil != err {
-				tKeyGen.logger.Error().Err(err).Msg("fail to unmarshal wrapped message bytes")
-				return nil, err
-			}
-
-			// create timeout func so we can ensure TSS doesn't get locked up and frozen
-			errChan := make(chan error, 1)
-			go func() {
-				err := tKeyGen.tssCommonStruct.ProcessOneMessage(&wrappedMsg, m.PeerID.String())
-				errChan <- err
-			}()
-
-			select {
-			case err := <-errChan:
-				if err != nil {
-					tKeyGen.logger.Error().Err(err).Msg("fail to process the received message")
-					return nil, err
-				}
-			case <-time.After(tKeyGen.tssCommonStruct.GetConf().KeyGenTimeout):
-				err := errors.New("timeout")
-				tKeyGen.logger.Error().Err(err).Msg("fail to process the received message")
 			}
 
 		case msg := <-endCh:

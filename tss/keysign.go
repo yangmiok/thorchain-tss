@@ -25,7 +25,7 @@ func (t *TssServer) KeySign(req keysign.KeySignReq) (keysign.KeySignResp, error)
 		t.conf,
 		t.priKey,
 		t.p2pCommunication.BroadcastMsgChan,
-		&t.stopChan,
+		t.stopChan,
 		&t.Status.CurrKeySign,
 		msgID,
 	)
