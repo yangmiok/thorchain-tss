@@ -27,7 +27,7 @@ func (t *TssServer) Keygen(req keygen.KeyGenReq) (keygen.KeyGenResp, error) {
 		t.conf,
 		t.priKey,
 		t.p2pCommunication.BroadcastMsgChan,
-		&t.stopChan,
+		t.stopChan,
 		t.preParams,
 		&t.Status.CurrKeyGen,
 		msgID,
