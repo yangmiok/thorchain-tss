@@ -95,7 +95,12 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 	newPubKey, addr, err := common.GetTssPubKey(k)
 	if err != nil {
 		t.logger.Error().Err(err).Msg("fail to generate the new Tss key")
-		status = common.Fail
+		return keygen.NewResponse(
+			"",
+			"",
+			common.Fail,
+			common.NewBlame("Fail to convert ECPoint to Tss Public key"),
+		), nil
 	}
 
 	return keygen.NewResponse(

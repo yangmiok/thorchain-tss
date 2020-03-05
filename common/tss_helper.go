@@ -297,9 +297,9 @@ func (t *TssCommon) getHashCheckBlamePeers(localCacheItem *LocalCacheItem, hashC
 	}
 }
 
-func NewBlame() Blame {
+func NewBlame(reason string) Blame {
 	return Blame{
-		FailReason: "",
+		FailReason: reason,
 		BlameNodes: make([]string, 0),
 	}
 }
