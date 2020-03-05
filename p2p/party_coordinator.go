@@ -294,7 +294,8 @@ func (pc *PartyCoordinator) JoinParty(remotePeer peer.ID, msg *messages.JoinPart
 		}
 	}
 	if len(respBuf) == 0 {
-		return nil, errors.New("fail to get response")
+		pc.logger.Info().Msg("fail to get the response")
+		return nil, nil
 	}
 	var resp messages.JoinPartyResponse
 	if err := proto.Unmarshal(respBuf, &resp); err != nil {
@@ -311,7 +312,7 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(remotePeer peer.ID, msg *messages
 	err := backoff.Retry(func() error {
 		joinPartyResp, err := pc.JoinParty(remotePeer, msg, peers, threshold)
 		if err == nil {
-			if joinPartyResp.Type == messages.JoinPartyResponse_LeaderNotReady {
+			if joinPartyResp.Type == messages.JoinPartyResponse_LeaderNotReady || joinPartyResp == nil {
 				return errors.New("leader not ready")
 			}
 			resp = joinPartyResp
