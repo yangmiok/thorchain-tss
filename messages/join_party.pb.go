@@ -109,7 +109,11 @@ type JoinPartyResponse struct {
 	XXX_sizecache        int32                          `json:"-"`
 }
 
-func (m *JoinPartyResponse) Reset()         { *m = JoinPartyResponse{} }
+func (m *JoinPartyResponse) Reset() {
+	*m = JoinPartyResponse{
+		Type: JoinPartyResponse_Unknown,
+	}
+}
 func (m *JoinPartyResponse) String() string { return proto.CompactTextString(m) }
 func (*JoinPartyResponse) ProtoMessage()    {}
 func (*JoinPartyResponse) Descriptor() ([]byte, []int) {
