@@ -1,7 +1,9 @@
 package keysign
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
@@ -27,7 +29,7 @@ var signatureNotifierProtocol protocol.ID = "/p2p/signatureNotifier"
 type signatureItem struct {
 	messageID     string
 	peerID        peer.ID
-	signatureData *bc.SignatureData
+	signatureData []*bc.SignatureData
 }
 
 // SignatureNotifier is design to notify the
@@ -71,18 +73,13 @@ func (s *SignatureNotifier) handleStream(stream network.Stream) {
 		logger.Err(err).Msgf("fail to read payload from stream")
 		return
 	}
-	_ = payload
 	var msg messages.KeysignSignature
 	if err := proto.Unmarshal(payload, &msg); err != nil {
 		logger.Err(err).Msg("fail to unmarshal join party request")
 		return
 	}
-	var signature bc.SignatureData
-	if len(msg.Signature) > 0 && msg.KeysignStatus == messages.KeysignSignature_Success {
-		if err := proto.Unmarshal(msg.Signature, &signature); err != nil {
-			logger.Error().Err(err).Msg("fail to unmarshal signature data")
-			return
-		}
+	if msg.KeysignStatus == messages.KeysignSignature_Failed {
+		return
 	}
 	s.notifierLock.Lock()
 	defer s.notifierLock.Unlock()
@@ -91,7 +88,7 @@ func (s *SignatureNotifier) handleStream(stream network.Stream) {
 		logger.Debug().Msgf("notifier for message id(%s) not exist", msg.ID)
 		return
 	}
-	finished, err := n.ProcessSignature(&signature)
+	finished, err := n.ProcessSignature(msg.Signature)
 	if err != nil {
 		logger.Error().Err(err).Msg("fail to update local signature data")
 		return
@@ -143,19 +140,32 @@ func (s *SignatureNotifier) sendOneMsgToPeer(m *signatureItem) error {
 			s.logger.Error().Err(err).Msg("fail to close stream")
 		}
 	}()
+
 	ks := &messages.KeysignSignature{
 		ID:            m.messageID,
 		KeysignStatus: messages.KeysignSignature_Failed,
 	}
 
-	if m.signatureData != nil {
-		buf, err := proto.Marshal(m.signatureData)
+	var buf bytes.Buffer
+	for _, each := range m.signatureData {
+		b, err := proto.Marshal(each)
 		if err != nil {
 			return fmt.Errorf("fail to marshal signature data to bytes:%w", err)
 		}
-		ks.Signature = buf
+		hexB := make([]byte, hex.EncodedLen(len(b)))
+		hex.Encode(hexB, b)
+		_, err = buf.Write(hexB)
+		if err != nil {
+			return err
+		}
+		_, err = buf.Write([]byte{','})
+		if err != nil {
+			return err
+		}
+		ks.Signature = buf.Bytes()
 		ks.KeysignStatus = messages.KeysignSignature_Success
 	}
+
 	ksBuf, err := proto.Marshal(ks)
 	if err != nil {
 		return fmt.Errorf("fail to marshal Keysign Signature to bytes:%w", err)
@@ -172,11 +182,11 @@ func (s *SignatureNotifier) sendOneMsgToPeer(m *signatureItem) error {
 }
 
 // BroadcastSignature sending the keysign signature to all other peers
-func (s *SignatureNotifier) BroadcastSignature(messageID string, sig *bc.SignatureData, peers []peer.ID) error {
-	return s.broadcastCommon(messageID, sig, peers)
+func (s *SignatureNotifier) BroadcastSignature(messageID string, sigs []*bc.SignatureData, peers []peer.ID) error {
+	return s.broadcastCommon(messageID, sigs, peers)
 }
 
-func (s *SignatureNotifier) broadcastCommon(messageID string, sig *bc.SignatureData, peers []peer.ID) error {
+func (s *SignatureNotifier) broadcastCommon(messageID string, sigs []*bc.SignatureData, peers []peer.ID) error {
 	for _, p := range peers {
 		if p == s.host.ID() {
 			// don't send the signature to itself
@@ -186,7 +196,7 @@ func (s *SignatureNotifier) broadcastCommon(messageID string, sig *bc.SignatureD
 		case s.messages <- &signatureItem{
 			messageID:     messageID,
 			peerID:        p,
-			signatureData: sig,
+			signatureData: sigs,
 		}:
 		case <-s.stopChan:
 			return nil
@@ -213,7 +223,7 @@ func (s *SignatureNotifier) removeNotifier(n *Notifier) {
 }
 
 // WaitForSignature wait until keysign finished and signature is available
-func (s *SignatureNotifier) WaitForSignature(messageID string, message []byte, poolPubKey string, timeout time.Duration) (*bc.SignatureData, error) {
+func (s *SignatureNotifier) WaitForSignature(messageID string, message []byte, poolPubKey string, timeout time.Duration) (*[]bc.SignatureData, error) {
 	n, err := NewNotifier(messageID, message, poolPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create notifier")

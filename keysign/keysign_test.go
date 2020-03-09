@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -118,18 +119,22 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 		return
 	}
 	sort.Strings(testPubKeys)
-	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys)
-	messageID, err := common.MsgToHashString([]byte(req.Message))
+	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", []string{"helloworld-test", "helloword-test2"}, testPubKeys)
+	sort.Strings(req.Messages)
+	dat := []byte(strings.Join(req.Messages, ","))
+	messageID, err := common.MsgToHashString(dat)
 	c.Assert(err, IsNil)
 	wg := sync.WaitGroup{}
 	lock := &sync.Mutex{}
-	keysignResult := make(map[int]*bc.SignatureData)
+	keysignResult := make(map[int][]*bc.SignatureData)
 	conf := common.TssConfig{
 		KeyGenTimeout:   60 * time.Second,
 		KeySignTimeout:  60 * time.Second,
 		PreParamTimeout: 5 * time.Second,
 	}
-
+	var msgForSign [][]byte
+	msgForSign = append(msgForSign, []byte(req.Messages[0]))
+	msgForSign = append(msgForSign, []byte(req.Messages[1]))
 	for i := 0; i < s.partyNum; i++ {
 		wg.Add(1)
 		go func(idx int) {
@@ -139,7 +144,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 			keysignIns := NewTssKeySign(comm.GetLocalPeerID(),
 				conf,
 				comm.BroadcastMsgChan,
-				stopChan, messageID)
+				stopChan,  messageID, 2)
 			keysignMsgChannel := keysignIns.GetTssKeySignChannels()
 			comm.SetSubscribe(messages.TSSKeySignMsg, messageID, keysignMsgChannel)
 			comm.SetSubscribe(messages.TSSKeySignVerMsg, messageID, keysignMsgChannel)
@@ -148,7 +153,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 			defer comm.CancelSubscribe(messages.TSSKeySignVerMsg, messageID)
 			localState, err := s.stateMgrs[idx].GetLocalState(req.PoolPubKey)
 			c.Assert(err, IsNil)
-			sig, err := keysignIns.SignMessage([]byte(req.Message), localState, req.SignerPubKeys)
+			sig, err := keysignIns.SignMessage(msgForSign, localState, req.SignerPubKeys)
 			c.Assert(err, IsNil)
 			lock.Lock()
 			defer lock.Unlock()
@@ -156,13 +161,21 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 		}(i)
 	}
 	wg.Wait()
-	var signature string
+	var signatures []string
 	for _, item := range keysignResult {
-		if len(signature) == 0 {
-			signature = string(item.S) + string(item.R)
+		if len(signatures) == 0 {
+			for _, each := range item {
+				signatures = append(signatures, string(each.Signature))
+			}
 			continue
 		}
-		c.Assert(signature, Equals, string(item.S)+string(item.R))
+		var targetSignatures []string
+		for _, each := range item {
+			targetSignatures = append(targetSignatures, string(each.Signature))
+		}
+
+		c.Assert(signatures, DeepEquals, targetSignatures)
+
 	}
 }
 

@@ -106,6 +106,7 @@ func (t *TssTestSuite) TestTssProcessOutCh(c *C) {
 	localTestPubKeys := make([]string, len(testPubKeys))
 	copy(localTestPubKeys, testPubKeys[:])
 	partiesID, localPartyID, err := GetParties(localTestPubKeys, testPubKeys[0])
+	localPartyID.Moniker = "test"
 	c.Assert(err, IsNil)
 	messageRouting := btss.MessageRouting{
 		From:                    localPartyID,
@@ -120,12 +121,24 @@ func (t *TssTestSuite) TestTssProcessOutCh(c *C) {
 	}
 	msg := btss.NewMessageWrapper(messageRouting, testContent)
 	tssMsg := btss.NewMessage(messageRouting, testContent, msg)
-	tssCommonStruct := NewTssCommon("", nil, conf, "test")
+	tssCommonStruct := NewTssCommon("", nil, conf, "test", 1)
+	ctx := btss.NewPeerContext(partiesID)
+	localPartyID.Moniker = "test"
+	params := btss.NewParameters(ctx, localPartyID, len(partiesID), 2)
+	outCh := make(chan btss.Message, len(partiesID))
+	endCh := make(chan btsskeygen.LocalPartySaveData, len(partiesID))
+	testParty := btsskeygen.NewLocalParty(params, outCh, endCh)
+	keyGenPartyMap := make(map[string]btss.Party)
+	keyGenPartyMap["test"] = testParty
+	tssCommonStruct.SetPartyInfo(&PartyInfo{
+		PartyMap:   keyGenPartyMap,
+		PartyIDMap: nil,
+	})
 	err = tssCommonStruct.ProcessOutCh(tssMsg, messages.TSSKeyGenMsg)
 	c.Assert(err, IsNil)
 }
 
-func fabricateTssMsg(c *C, partyID *btss.PartyID, roundInfo, msg string) *messages.WrappedMessage {
+func fabricateTssMsg(c *C, partyID *btss.PartyID, roundInfo string, msg []byte) *messages.WrappedMessage {
 	routingInfo := btss.MessageRouting{
 		From:                    partyID,
 		To:                      nil,
@@ -136,7 +149,7 @@ func fabricateTssMsg(c *C, partyID *btss.PartyID, roundInfo, msg string) *messag
 	wiredMessage := messages.WireMessage{
 		Routing:   &routingInfo,
 		RoundInfo: roundInfo,
-		Message:   []byte(msg),
+		Message:   msg,
 	}
 	marshaledMsg, err := json.Marshal(wiredMessage)
 	c.Assert(err, IsNil)
@@ -171,12 +184,18 @@ func senderIDtoPubKey(senderID *btss.PartyID) (string, error) {
 }
 
 func (t *TssTestSuite) testVerMsgDuplication(c *C, tssCommonStruct *TssCommon, senderID *btss.PartyID, partiesID []*btss.PartyID) {
-	testMsg := "testVerMsgDuplication"
 	roundInfo := "round testVerMsgDuplication"
-	msgHash, err := BytesToHashString([]byte(testMsg))
+	testMsg := BulkWireMsg{
+		WiredMsg:      nil,
+		MsgIdentifier: "test",
+		Routing:       nil,
+	}
+	testMsgMarshed, err := json.Marshal([]BulkWireMsg{testMsg})
+	c.Assert(err, IsNil)
+	msgHash, err := BytesToHashString(testMsgMarshed)
 	c.Assert(err, IsNil)
 	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
-	wrappedMsg := fabricateTssMsg(c, senderID, roundInfo, testMsg)
+	wrappedMsg := fabricateTssMsg(c, senderID, roundInfo, testMsgMarshed)
 	// you can pass any p2pID in Tss message
 	err = tssCommonStruct.ProcessOneMessage(wrappedMsg, senderID.Id)
 	c.Assert(err, IsNil)
@@ -194,9 +213,7 @@ func (t *TssTestSuite) testVerMsgDuplication(c *C, tssCommonStruct *TssCommon, s
 func setupProcessVerMsgEnv(c *C, keyPool []string, partyNum int) (*TssCommon, []*btss.PartyID, []*btss.PartyID) {
 	ByPassGeneratePreParam = true
 	conf := TssConfig{}
-	// keySignInstance := keysign.NewTssKeySign("", "", conf, sk, nil, nil, nil)
-	tssCommonStruct := NewTssCommon("", nil, conf, "test")
-	// tssCommonStruct := keySignInstance.GetTssCommonStruct()
+	tssCommonStruct := NewTssCommon("", nil, conf, "test", 1)
 	localTestPubKeys := make([]string, partyNum)
 	copy(localTestPubKeys, keyPool[:partyNum])
 	// for the test, we choose the first pubic key as the test instance public key
@@ -205,12 +222,15 @@ func setupProcessVerMsgEnv(c *C, keyPool []string, partyNum int) (*TssCommon, []
 	partyIDMap := SetupPartyIDMap(partiesID)
 	SetupIDMaps(partyIDMap, tssCommonStruct.PartyIDtoP2PID)
 	ctx := btss.NewPeerContext(partiesID)
+	localPartyID.Moniker = "test"
 	params := btss.NewParameters(ctx, localPartyID, len(partiesID), 2)
 	outCh := make(chan btss.Message, len(partiesID))
 	endCh := make(chan btsskeygen.LocalPartySaveData, len(partiesID))
 	keyGenParty := btsskeygen.NewLocalParty(params, outCh, endCh)
+	keyGenPartyMap := make(map[string]btss.Party)
+	keyGenPartyMap["test"] = keyGenParty
 	tssCommonStruct.SetPartyInfo(&PartyInfo{
-		Party:      keyGenParty,
+		PartyMap:   keyGenPartyMap,
 		PartyIDMap: partyIDMap,
 	})
 	tssCommonStruct.SetLocalPeerID("fakeID")
@@ -222,16 +242,22 @@ func setupProcessVerMsgEnv(c *C, keyPool []string, partyNum int) (*TssCommon, []
 }
 
 func (t *TssTestSuite) testDropMsgOwner(c *C, tssCommonStruct *TssCommon, senderID *btss.PartyID, peerPartiesID []*btss.PartyID) {
+	roundInfo := "round testDropMsgOwner"
 	// clean up the blamepeer list for each test
 	defer func() {
 		tssCommonStruct.BlamePeers = NoBlame
 	}()
-	testMsg := "testDropMsgOwner"
-	roundInfo := "round testDropMsgOwner"
-	msgHash, err := BytesToHashString([]byte(testMsg))
+	testMsg := BulkWireMsg{
+		WiredMsg:      nil,
+		MsgIdentifier: "test",
+		Routing:       nil,
+	}
+	testMsgMarshed, err := json.Marshal([]BulkWireMsg{testMsg})
+	c.Assert(err, IsNil)
+	msgHash, err := BytesToHashString(testMsgMarshed)
 	c.Assert(err, IsNil)
 	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
-	senderMsg := fabricateTssMsg(c, senderID, roundInfo, testMsg)
+	senderMsg := fabricateTssMsg(c, senderID, roundInfo, testMsgMarshed)
 	// you can pass any p2pID in Tss message
 	err = tssCommonStruct.ProcessOneMessage(senderMsg, tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())
 	c.Assert(err, IsNil)
@@ -257,12 +283,27 @@ func (t *TssTestSuite) testDropMsgOwner(c *C, tssCommonStruct *TssCommon, sender
 }
 
 func (t *TssTestSuite) testVerMsgAndUpdate(c *C, tssCommonStruct *TssCommon, senderID *btss.PartyID, partiesID []*btss.PartyID) {
-	testMsg := "testVerMsgAndUpdate"
-	roundInfo := "round testVerMsgAndUpdate"
-	msgHash, err := BytesToHashString([]byte(testMsg))
+	roundInfoMsg := "round testVerMsgAndUpdate"
+
+	routingInfo := btss.MessageRouting{
+		From:                    senderID,
+		To:                      nil,
+		IsBroadcast:             true,
+		IsToOldCommittee:        false,
+		IsToOldAndNewCommittees: false,
+	}
+
+	testMsg := BulkWireMsg{
+		WiredMsg:      []byte("test"),
+		MsgIdentifier: "test",
+		Routing:       &routingInfo,
+	}
+	testMsgMarshed, err := json.Marshal([]BulkWireMsg{testMsg})
 	c.Assert(err, IsNil)
-	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
-	wrappedMsg := fabricateTssMsg(c, senderID, roundInfo, testMsg)
+	msgHash, err := BytesToHashString(testMsgMarshed)
+	c.Assert(err, IsNil)
+	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfoMsg)
+	wrappedMsg := fabricateTssMsg(c, senderID, roundInfoMsg, testMsgMarshed)
 	// you can pass any p2pID in Tss message
 	err = tssCommonStruct.ProcessOneMessage(wrappedMsg, tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())
 	c.Assert(err, IsNil)
@@ -334,13 +375,30 @@ func (t *TssTestSuite) TestProcessVerMessage(c *C) {
 
 func constructMsg(c *C, senderID *btss.PartyID, testParties TestParties, modifiedHash []string, roundInfo, modifiedOwnerMsg string) (*messages.WrappedMessage, map[int]*messages.WrappedMessage, string) {
 	wrappedMsgMap := make(map[int]*messages.WrappedMessage)
-	testMsg := "testVerMsgWrongHash"
-	msgHash, err := BytesToHashString([]byte(testMsg))
+
+	testMsg := BulkWireMsg{
+		WiredMsg:      []byte("dummy data"),
+		MsgIdentifier: "test",
+		Routing:       nil,
+	}
+	testMsgMarshed, err := json.Marshal([]BulkWireMsg{testMsg})
 	c.Assert(err, IsNil)
+	msgHash, err := BytesToHashString(testMsgMarshed)
+	c.Assert(err, IsNil)
+	if len(modifiedHash) == 0 {
+		modifiedHash = append(modifiedHash, msgHash)
+	}
 	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
-	senderMsg := fabricateTssMsg(c, senderID, roundInfo, testMsg)
+	senderMsg := fabricateTssMsg(c, senderID, roundInfo, testMsgMarshed)
 	if len(modifiedOwnerMsg) != 0 {
-		senderMsg = fabricateTssMsg(c, senderID, roundInfo, modifiedOwnerMsg)
+		testMsg := BulkWireMsg{
+			WiredMsg:      []byte(modifiedOwnerMsg),
+			MsgIdentifier: "test",
+			Routing:       nil,
+		}
+		testMsgMarshed, err := json.Marshal([]BulkWireMsg{testMsg})
+		c.Assert(err, IsNil)
+		senderMsg = fabricateTssMsg(c, senderID, roundInfo, testMsgMarshed)
 	}
 
 	// we send the verify message from the the same sender, Tss should only accept the first verify message
@@ -378,10 +436,7 @@ func (t *TssTestSuite) TestProcessVerMsgBlame(c *C) {
 	}
 	// the modified hash should be paired with malicious nodes.
 	roundInfo = "scenario2"
-	testMsg := "testVerMsgWrongHash"
-	msgHash, err := BytesToHashString([]byte(testMsg))
-	c.Assert(err, IsNil)
-	modifiedHash = []string{msgHash}
+	modifiedHash = []string{}
 	senderMsg, wrappedMsgMap, msgKey = constructMsg(c, peerPartiesID[0], testParties, modifiedHash, roundInfo, "aaa")
 	t.testVerMsgWrongHash(c, tssCommonStruct, peerPartiesID[0], peerPartiesID, testParties, senderMsg, wrappedMsgMap, msgKey, true)
 

@@ -28,41 +28,45 @@ import (
 
 // PartyInfo the information used by tss key gen and key sign
 type PartyInfo struct {
-	Party      btss.Party
+	PartyMap   map[string]btss.Party
 	PartyIDMap map[string]*btss.PartyID
 }
 
 type TssCommon struct {
-	conf                TssConfig
-	logger              zerolog.Logger
-	partyLock           *sync.Mutex
-	partyInfo           *PartyInfo
-	PartyIDtoP2PID      map[string]peer.ID
-	unConfirmedMsgLock  *sync.Mutex
-	unConfirmedMessages map[string]*LocalCacheItem
-	localPeerID         string
-	broadcastChannel    chan *messages.BroadcastMsgChan
-	TssMsg              chan *p2p.Message
-	P2PPeers            []peer.ID // most of tss message are broadcast, we store the peers ID to avoid iterating
-	BlamePeers          Blame
-	msgID               string
+	conf                        TssConfig
+	logger                      zerolog.Logger
+	partyLock                   *sync.Mutex
+	partyInfo                   *PartyInfo
+	PartyIDtoP2PID              map[string]peer.ID
+	unConfirmedMsgLock          *sync.Mutex
+	unConfirmedMessages         map[string]*LocalCacheItem
+	localPeerID                 string
+	broadcastChannel            chan *messages.BroadcastMsgChan
+	TssMsg                      chan *messages.Message
+	P2PPeers                    []peer.ID // most of tss message are broadcast, we store the peers ID to avoid iterating
+	BlamePeers                  Blame
+	msgID                       string
+	cachedWireBroadcastMsgLists map[string][]BulkWireMsg
+	cachedWireUnicastMsgLists   map[string][]BulkWireMsg
 }
 
-func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgChan, conf TssConfig, msgID string) *TssCommon {
+func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgChan, conf TssConfig, msgID string, msgNum uint32) *TssCommon {
 	return &TssCommon{
-		conf:                conf,
-		logger:              log.With().Str("module", "tsscommon").Logger(),
-		partyLock:           &sync.Mutex{},
-		partyInfo:           nil,
-		PartyIDtoP2PID:      make(map[string]peer.ID),
-		unConfirmedMsgLock:  &sync.Mutex{},
-		unConfirmedMessages: make(map[string]*LocalCacheItem),
-		localPeerID:         peerID,
-		broadcastChannel:    broadcastChannel,
-		TssMsg:              make(chan *p2p.Message),
-		P2PPeers:            nil,
-		BlamePeers:          Blame{},
-		msgID:               msgID,
+		conf:                        conf,
+		logger:                      log.With().Str("module", "tsscommon").Str("msgID", msgID).Logger(),
+		partyLock:                   &sync.Mutex{},
+		partyInfo:                   nil,
+		PartyIDtoP2PID:              make(map[string]peer.ID),
+		unConfirmedMsgLock:          &sync.Mutex{},
+		unConfirmedMessages:         make(map[string]*LocalCacheItem),
+		localPeerID:                 peerID,
+		broadcastChannel:            broadcastChannel,
+		TssMsg:                      make(chan *messages.Message, msgNum),
+		P2PPeers:                    nil,
+		BlamePeers:                  NewBlame(),
+		msgID:                       msgID,
+		cachedWireBroadcastMsgLists: make(map[string][]BulkWireMsg),
+		cachedWireUnicastMsgLists:   make(map[string][]BulkWireMsg),
 	}
 }
 
@@ -160,12 +164,29 @@ func (t *TssCommon) updateLocal(wireMsg *messages.WireMessage) error {
 	if partyInfo == nil {
 		return nil
 	}
-	partyID, ok := partyInfo.PartyIDMap[wireMsg.Routing.From.Id]
-	if !ok {
-		return fmt.Errorf("get message from unknown party %s", partyID.Id)
+
+	var BulkMsg []BulkWireMsg
+	err := json.Unmarshal(wireMsg.Message, &BulkMsg)
+	if err != nil {
+		t.logger.Error().Err(err).Msg("error to unmarshal the BulkMsg")
+		return err
 	}
-	if _, err := partyInfo.Party.UpdateFromBytes(wireMsg.Message, partyID, wireMsg.Routing.IsBroadcast); nil != err {
-		return fmt.Errorf("fail to set bytes to local party: %w", err)
+	for _, el := range BulkMsg {
+		party, ok := partyInfo.PartyMap[el.MsgIdentifier]
+		if !ok {
+			t.logger.Error().Msg("cannot find the party to this wired msg")
+			return errors.New("cannot find the party")
+		}
+		partyID, ok := partyInfo.PartyIDMap[el.Routing.From.Id]
+		if !ok {
+			t.logger.Error().Msg("error in find the partyID")
+			return errors.New("cannot find the party to handle the message")
+		}
+		thisParty := party
+		if _, err := thisParty.UpdateFromBytes(el.WiredMsg, partyID, wireMsg.Routing.IsBroadcast); nil != err {
+			return fmt.Errorf("fail to set bytes to local party: %w", err)
+		}
+
 	}
 	return nil
 }
@@ -250,15 +271,18 @@ func (t *TssCommon) hashCheck(localCacheItem *LocalCacheItem) error {
 	return nil
 }
 
-func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSSMessageType) error {
-	buf, r, err := msg.WireBytes()
-	// if we cannot get the wire share, the tss keygen will fail, we just quit.
+func (t *TssCommon) sendBulkMsg(wiredMsgType string, tssMsgType messaages.THORChainTSSMessageType, wiredMsgList []BulkWireMsg) error {
+	// since all the messages in the list is the same round, so it must have the same dest
+	// we just need to get the routing info of the first message
+	r := wiredMsgList[0].Routing
+
+	buf, err := json.Marshal(wiredMsgList)
 	if err != nil {
-		return fmt.Errorf("fail to get wire bytes: %w", err)
+		return fmt.Errorf("error in marshal the cachedWireMsg: %w", err)
 	}
 	wireMsg := messages.WireMessage{
 		Routing:   r,
-		RoundInfo: msg.Type(),
+		RoundInfo: wiredMsgType,
 		Message:   buf,
 	}
 	wireMsgBytes, err := json.Marshal(wireMsg)
@@ -266,8 +290,8 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		return fmt.Errorf("fail to convert tss msg to wire bytes: %w", err)
 	}
 	wrappedMsg := messages.WrappedMessage{
-		MessageType: msgType,
 		MsgID:       t.msgID,
+		MessageType: tssMsgType,
 		Payload:     wireMsgBytes,
 	}
 	peerIDs := make([]peer.ID, 0)
@@ -292,6 +316,68 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		WrappedMessage: wrappedMsg,
 		PeersID:        peerIDs,
 	})
+
+	return nil
+}
+
+func (t *TssCommon) ProcessOutCh(msg btss.Message, tssMsgType p2p.THORChainTSSMessageType) error {
+	msgDat, r, err := msg.WireBytes()
+	// if we cannot get the wire share, the tss keygen will fail, we just quit.
+	if nil != err {
+		return fmt.Errorf("fail to get wire bytes: %w", err)
+	}
+
+	if r.IsBroadcast {
+		cachedWiredMsg := NewBulkWireMsg(msgDat, msg.GetFrom().Moniker, r)
+		// now we store this message in cache
+		cachedList, ok := t.cachedWireBroadcastMsgLists[msg.Type()]
+		if !ok {
+			l := []BulkWireMsg{cachedWiredMsg}
+			t.cachedWireBroadcastMsgLists[msg.Type()] = l
+		} else {
+			cachedList = append(cachedList, cachedWiredMsg)
+			t.cachedWireBroadcastMsgLists[msg.Type()] = cachedList
+		}
+	} else {
+		cachedWiredMsg := NewBulkWireMsg(msgDat, msg.GetFrom().Moniker, r)
+		cachedList, ok := t.cachedWireUnicastMsgLists[r.To[0].String()]
+		if !ok {
+			l := []BulkWireMsg{cachedWiredMsg}
+			t.cachedWireUnicastMsgLists[r.To[0].String()] = l
+		} else {
+			cachedList = append(cachedList, cachedWiredMsg)
+			t.cachedWireUnicastMsgLists[r.To[0].String()] = cachedList
+		}
+	}
+	if len(t.cachedWireUnicastMsgLists) != 0 {
+		// now we send the messages that have all the signers ready
+		for wiredMsgType, wiredMsgList := range t.cachedWireUnicastMsgLists {
+			if len(wiredMsgList) == len(t.partyInfo.PartyMap) {
+				err := t.sendBulkMsg(wiredMsgType, tssMsgType, wiredMsgList)
+				if err != nil {
+					t.logger.Error().Err(err).Msg("error in send bulk message")
+					return err
+				}
+				// we do need to delete this message
+				delete(t.cachedWireUnicastMsgLists, wiredMsgType)
+			}
+		}
+	}
+
+	if len(t.cachedWireBroadcastMsgLists) != 0 {
+		// now we send the messages that have all the signers ready
+		for wiredMsgType, wiredMsgList := range t.cachedWireBroadcastMsgLists {
+			if len(wiredMsgList) == len(t.partyInfo.PartyMap) {
+				err := t.sendBulkMsg(wiredMsgType, tssMsgType, wiredMsgList)
+				if err != nil {
+					t.logger.Error().Err(err).Msg("error in send bulk message")
+					return err
+				}
+				// we do need to delete this message
+				delete(t.cachedWireBroadcastMsgLists, wiredMsgType)
+			}
+		}
+	}
 
 	return nil
 }

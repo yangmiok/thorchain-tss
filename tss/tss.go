@@ -1,10 +1,10 @@
 package tss
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -142,12 +142,8 @@ func (t *TssServer) requestToMsgId(request interface{}) (string, error) {
 		}
 		dat = []byte(keyAccumulation)
 	case keysign.Request:
-		msgToSign, err := base64.StdEncoding.DecodeString(value.Message)
-		if err != nil {
-			t.logger.Error().Err(err).Msg("error in decode the keysign req")
-			return "", err
-		}
-		dat = msgToSign
+		sort.Strings(value.Messages)
+		dat = []byte(strings.Join(value.Messages, ","))
 	default:
 		t.logger.Error().Msg("unknown request type")
 		return "", errors.New("unknown request type")

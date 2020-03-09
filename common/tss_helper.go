@@ -161,7 +161,13 @@ func (t *TssCommon) getBlamePubKeysNotInList(peers []string) ([]string, error) {
 	var partiesNotInList []string
 	// we convert nodes (NOT in the peers list) P2PID to public key
 	for partyID, p2pID := range t.PartyIDtoP2PID {
-		if t.partyInfo.Party.PartyID().Id == partyID {
+		// since bath signing is with the same party, so we get the first party in the map
+		var firstParty btss.Party
+		for _, val := range t.partyInfo.PartyMap {
+			firstParty = val
+			break
+		}
+		if firstParty.PartyID().Id == partyID {
 			continue
 		}
 		found := false

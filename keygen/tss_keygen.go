@@ -45,7 +45,7 @@ func NewTssKeyGen(localP2PID string,
 			Str("msgID", msgID).Logger(),
 		localNodePubKey: localNodePubKey,
 		preParams:       preParam,
-		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID),
+		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, 1),
 		stopChan:        stopChan,
 		localParty:      nil,
 		keygenCurrent:   keygenCurrent,
@@ -93,22 +93,26 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq Request) (*crypto.ECPoint, er
 		tKeyGen.logger.Error().Msgf("error in creating mapping between partyID and P2P ID")
 		return nil, err
 	}
-
+	//bath signing is no sense for keygen, so we hardcode the identifier as 0 now.
+	localPartyID.Moniker = "0"
+	keyGenPartyMap := make(map[string]btss.Party)
+	keyGenPartyMap["0"] = keyGenParty
 	tKeyGen.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
-		Party:      keyGenParty,
+		PartyMap:   keyGenPartyMap,
 		PartyIDMap: partyIDMap,
 	})
 	tKeyGen.tssCommonStruct.P2PPeers = common.GetPeersID(tKeyGen.tssCommonStruct.PartyIDtoP2PID, tKeyGen.tssCommonStruct.GetLocalPeerID())
 	var keyGenWg sync.WaitGroup
 	keyGenWg.Add(2)
+
 	// start keygen
 	go func() {
 		defer keyGenWg.Done()
-		defer tKeyGen.logger.Info().Msg("keyGenParty finished")
 		if err := keyGenParty.Start(); nil != err {
 			tKeyGen.logger.Error().Err(err).Msg("fail to start keygen party")
 			close(errChan)
 		}
+		tKeyGen.logger.Info().Msg("keyGenParty started")
 	}()
 	go tKeyGen.tssCommonStruct.ProcessInboundMessages(tKeyGen.commStopChan, &keyGenWg)
 	r, err := tKeyGen.processKeyGen(errChan, outCh, endCh, keyGenLocalStateItem)

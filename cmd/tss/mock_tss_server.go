@@ -41,7 +41,8 @@ func (mts *MockTssServer) KeySign(req keysign.Request) (keysign.Response, error)
 	if mts.failToKeySign {
 		return keysign.Response{}, errors.New("you ask for it")
 	}
-	return keysign.NewResponse("", "", common.Success, common.NoBlame), nil
+	signature := keysign.NewSignature("a", "1", "2")
+	return keysign.NewResponse("", []keysign.Signature{signature}, common.Success, common.NoBlame), nil
 }
 
 func (mts *MockTssServer) GetStatus() common.TssStatus {

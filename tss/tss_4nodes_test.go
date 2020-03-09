@@ -1,9 +1,11 @@
 package tss
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
@@ -88,6 +90,23 @@ func (s *FourNodeTestSuite) SetUpTest(c *C) {
 	}
 }
 
+func checkSignResult(c *C, keysignResult map[int]keysign.Response) {
+
+	for i := 0; i < len(keysignResult)-1; i++ {
+		currentSignatures := keysignResult[i].Signatures
+		// we test with two messsages and the size of the signature should be 44
+		c.Assert(currentSignatures, HasLen, 2)
+		c.Assert(currentSignatures[0].S, HasLen, 44)
+		currentData, err := json.Marshal(currentSignatures)
+		c.Assert(err, IsNil)
+		nextSignatures := keysignResult[i+1].Signatures
+		nextData, err := json.Marshal(nextSignatures)
+		c.Assert(err, IsNil)
+		ret := bytes.Equal(currentData, nextData)
+		c.Assert(ret, Equals, true)
+	}
+}
+
 // generate a new key
 func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
 	req := keygen.NewRequest(testPubKeys)
@@ -114,19 +133,25 @@ func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
 			c.Assert(poolPubKey, Equals, item.PubKey)
 		}
 	}
-	keysignReqWithErr := keysign.NewRequest(poolPubKey, "helloworld", testPubKeys)
+	encodedTestMsg1 := base64.StdEncoding.EncodeToString([]byte("helloworld"))
+	encodedTestMsg2 := base64.StdEncoding.EncodeToString([]byte("helloworld2"))
+	encodedTestMsg3 := base64.StdEncoding.EncodeToString([]byte("helloworld3"))
+	encodedTestMsg4 := base64.StdEncoding.EncodeToString([]byte("helloworld4"))
+	keysignReqWithErr := keysign.NewRequest(poolPubKey, []string{"helloworld"}, testPubKeys)
 	resp, err := s.servers[0].KeySign(keysignReqWithErr)
 	c.Assert(err, NotNil)
-	c.Assert(resp.S, Equals, "")
-	keysignReqWithErr1 := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString([]byte("helloworld")), testPubKeys[:1])
+	dat, _ := json.Marshal(resp)
+	fmt.Printf("------>%s\n", string(dat))
+	c.Assert(resp.Signatures, HasLen, 0)
+	keysignReqWithErr1 := keysign.NewRequest(poolPubKey, []string{encodedTestMsg1}, testPubKeys[:1])
 	resp, err = s.servers[0].KeySign(keysignReqWithErr1)
 	c.Assert(err, NotNil)
-	c.Assert(resp.S, Equals, "")
-	keysignReqWithErr2 := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString([]byte("helloworld")), nil)
+	c.Assert(resp.Signatures, HasLen, 0)
+	keysignReqWithErr2 := keysign.NewRequest(poolPubKey, []string{encodedTestMsg1}, nil)
 	resp, err = s.servers[0].KeySign(keysignReqWithErr2)
 	c.Assert(err, NotNil)
-	c.Assert(resp.S, Equals, "")
-	keysignReq := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString([]byte("helloworld")), testPubKeys)
+	c.Assert(resp.Signatures, HasLen, 0)
+	keysignReq := keysign.NewRequest(poolPubKey, []string{encodedTestMsg1, encodedTestMsg2}, testPubKeys)
 	keysignResult := make(map[int]keysign.Response)
 	for i := 0; i < partyNum; i++ {
 		wg.Add(1)
@@ -140,37 +165,24 @@ func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
 		}(i)
 	}
 	wg.Wait()
-	var signature string
-	for _, item := range keysignResult {
-		if len(signature) == 0 {
-			signature = item.S + item.R
-			continue
-		}
-		c.Assert(signature, Equals, item.S+item.R)
-	}
+	checkSignResult(c, keysignResult)
 
-	keysignReq = keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString([]byte("helloworld+xyz")), testPubKeys[:3])
-	keysignResult1 := make(map[int]keysign.Response)
+	keysignReq2 := keysign.NewRequest(poolPubKey, []string{encodedTestMsg3, encodedTestMsg4}, testPubKeys[:3])
+	keysignResult2 := make(map[int]keysign.Response)
 	for i := 0; i < partyNum; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			res, err := s.servers[idx].KeySign(keysignReq)
+			res, err := s.servers[idx].KeySign(keysignReq2)
 			c.Assert(err, IsNil)
 			lock.Lock()
 			defer lock.Unlock()
-			keysignResult1[idx] = res
+			keysignResult2[idx] = res
 		}(i)
 	}
 	wg.Wait()
-	signature = ""
-	for _, item := range keysignResult1 {
-		if len(signature) == 0 {
-			signature = item.S + item.R
-			continue
-		}
-		c.Assert(signature, Equals, item.S+item.R)
-	}
+	checkSignResult(c, keysignResult2)
+
 	// make sure we sign
 }
 

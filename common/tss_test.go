@@ -26,7 +26,7 @@ func (TssCommonTestSuite) TestTssCommon(c *C) {
 	peerID, err := go_tss.GetPeerIDFromSecp256PubKey(pk.(secp256k1.PubKeySecp256k1))
 	c.Assert(err, IsNil)
 	broadcastChannel := make(chan *messages.BroadcastMsgChan)
-	tssCommon := NewTssCommon(peerID.String(), broadcastChannel, TssConfig{}, "message-id")
+	tssCommon := NewTssCommon(peerID.String(), broadcastChannel, TssConfig{}, "message-id", 1)
 	c.Assert(tssCommon, NotNil)
 	stopchan := make(chan struct{})
 	wg := sync.WaitGroup{}
@@ -36,7 +36,7 @@ func (TssCommonTestSuite) TestTssCommon(c *C) {
 	}()
 	bi, err := MsgToHashInt([]byte("whatever"))
 	c.Assert(err, IsNil)
-	wrapMsg := fabricateTssMsg(c, btss.NewPartyID("1,", "test", bi), "roundInfo", "message")
+	wrapMsg := fabricateTssMsg(c, btss.NewPartyID("1,", "test", bi), "roundInfo", []byte("message"))
 	buf, err := json.Marshal(wrapMsg)
 	c.Assert(err, IsNil)
 	pMsg := &p2p.Message{
@@ -45,7 +45,7 @@ func (TssCommonTestSuite) TestTssCommon(c *C) {
 	}
 
 	tssCommon.partyInfo = &PartyInfo{
-		Party:      nil,
+		PartyMap:   nil,
 		PartyIDMap: make(map[string]*btss.PartyID),
 	}
 	tssCommon.TssMsg <- pMsg
