@@ -82,7 +82,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		), nil
 	}
 	result, leaderPeerID, err := t.joinParty(msgID, msgToSign, req.SignerPubKeys)
-	fmt.Printf(">>>>>> TSS Result: %v\n", result.Type)
+	fmt.Printf(">>>>>> TSS Result: %v\n", result)
 	if err != nil {
 		blame, err := t.getBlamePeers(req.SignerPubKeys, []string{leaderPeerID.String()})
 		if err != nil {
