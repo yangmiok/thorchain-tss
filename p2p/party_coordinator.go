@@ -20,7 +20,7 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/messages"
 )
 
-const WaitForPartyGatheringTimeout time.Duration = time.Minute
+var WaitForPartyGatheringTimeout time.Duration = time.Minute
 
 type PartyCoordinator struct {
 	logger       zerolog.Logger

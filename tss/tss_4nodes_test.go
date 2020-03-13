@@ -20,6 +20,7 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/keygen"
 	"gitlab.com/thorchain/tss/go-tss/keysign"
+	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
 
 const (
@@ -59,6 +60,7 @@ var _ = Suite(&FourNodeTestSuite{})
 
 // setup four nodes for test
 func (s *FourNodeTestSuite) SetUpTest(c *C) {
+	p2p.WaitForPartyGatheringTimeout = 3 * time.Second
 	s.isBlameTest = false
 	common.InitLog("info", true, "four_nodes_test")
 	common.SetupBech32Prefix()
@@ -69,9 +71,9 @@ func (s *FourNodeTestSuite) SetUpTest(c *C) {
 	s.preParams = getPreparams(c)
 	s.servers = make([]*TssServer, partyNum)
 	conf := common.TssConfig{
-		KeyGenTimeout:   120 * time.Second,
-		KeySignTimeout:  120 * time.Second,
-		PreParamTimeout: 5 * time.Second,
+		KeyGenTimeout:   10 * time.Second,
+		KeySignTimeout:  10 * time.Second,
+		PreParamTimeout: 1 * time.Second,
 	}
 
 	for i := 0; i < partyNum; i++ {

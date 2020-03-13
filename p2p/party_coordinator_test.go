@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
+	"time"
 
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
@@ -15,6 +16,7 @@ import (
 )
 
 func TestNewPartyCoordinator(t *testing.T) {
+	WaitForPartyGatheringTimeout = 3 * time.Second
 	ApplyDeadline = false
 	id1 := tnet.RandIdentityOrFatal(t)
 	id2 := tnet.RandIdentityOrFatal(t)
@@ -153,6 +155,7 @@ func TestNewPartyCoordinator(t *testing.T) {
 }
 
 func TestNewPartyCoordinatorWithTimeout(t *testing.T) {
+	WaitForPartyGatheringTimeout = 3 * time.Second
 	ApplyDeadline = false
 	id1 := tnet.RandIdentityOrFatal(t)
 	id2 := tnet.RandIdentityOrFatal(t)
