@@ -194,6 +194,8 @@ func (pc *PartyCoordinator) onJoinPartyTimeout(joinParty *JoinParty) (bool, []st
 	if !ok {
 		return false, nil
 	}
+
+	pc.logger.Info().Msgf("join party timeout:%+v,requests:%+v", c.Peers, c.JoinPartyRequests)
 	// it could be timeout / finish almost happen at the same time, we give up timeout
 	if c.Status == Finished {
 		return true, c.GetParties()
@@ -315,6 +317,8 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(remotePeer peer.ID, msg *messages
 		pc.logger.Err(err).Msg("fail to join party")
 		return err
 	}, bf)
-
+	if err != nil {
+		pc.logger.Error().Err(err).Msgf("fail to join party after maximum retry:%s", pc.timeout)
+	}
 	return resp, err
 }
