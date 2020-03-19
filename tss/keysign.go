@@ -117,12 +117,13 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		t.broadcastKeysignFailure(msgID, signers)
 		// make sure we blame the leader as well
 		blame.AddBlameNodes(pKey)
+		fmt.Printf("--ssssssssssssss---------------->%v\n", result.Type)
 		return keysign.Response{
 			Status: common.Fail,
 			Blame:  blame,
 		}, fmt.Errorf("fail to form keysign party: %s", result.Type)
 	}
-
+	fmt.Println("should not come here!!!!!!")
 	signatureData, err := keysignInstance.SignMessage(msgToSign, localStateItem, req.SignerPubKeys)
 	// the statistic of keygen only care about Tss it self, even if the following http response aborts,
 	// it still counted as a successful keygen as the Tss model runs successfully.

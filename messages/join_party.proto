@@ -12,6 +12,7 @@ message JoinPartyResponse {
         Timeout = 2;
         LeaderNotReady = 3;
         UnknownPeer = 4;
+        RequestConfirmed = 5;
     }
     string ID = 1; // unique hash id
     ResponseType type = 2; // result

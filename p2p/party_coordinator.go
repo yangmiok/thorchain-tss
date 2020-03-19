@@ -69,14 +69,30 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 	var msg messages.JoinPartyRequest
 	if err := proto.Unmarshal(payload, &msg); err != nil {
 		logger.Err(err).Msg("fail to unmarshal join party request")
+
+
+		var msg messages.JoinPartyResponse
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+		fmt.Printf("--------------->%v\n", msg.Type)
+
+		}
+
+
 		return
 	}
+
 	resp, err := pc.processJoinPartyRequest(remotePeer, &msg)
 	if err != nil {
 		logger.Error().Err(err).Msg("fail to process join party request")
 		return
 	}
-	if err := pc.writeResponse(stream, resp); err != nil {
+	resp := messages.JoinPartyResponse{
+		ID:                   msg.GetID(),
+		Type:                 messages.JoinPartyResponse_RequestConfirmed,
+		PeerIDs:              nil,
+	}
+
+	if err := pc.writeResponse(stream, &resp); err != nil {
 		logger.Error().Err(err).Msg("fail to write response to stream")
 	}
 }
@@ -106,6 +122,7 @@ func (pc *PartyCoordinator) processJoinPartyRequest(remotePeer peer.ID, msg *mes
 		case <-time.After(pc.timeout):
 			// TODO make this timeout dynamic based on the threshold
 			result, parties := pc.onJoinPartyTimeout(joinParty)
+			fmt.Printf("------online parties-------->%v\n", parties)
 			if !result {
 				return &messages.JoinPartyResponse{
 					ID:      msg.ID,
@@ -309,9 +326,14 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(remotePeer peer.ID, msg *messages
 			if joinPartyResp.Type == messages.JoinPartyResponse_LeaderNotReady {
 				return errors.New("leader not ready")
 			}
+			if joinPartyResp.Type == messages.JoinPartyResponse_RequestConfirmed{
+				return nil
+			}
 			resp = joinPartyResp
 			return nil
 		}
+		fmt.Println("111111111111111111111111111")
+		time.Sleep(time.Second*20)
 		pc.logger.Err(err).Msg("fail to join party")
 		return err
 	}, bf)
