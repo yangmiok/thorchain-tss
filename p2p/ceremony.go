@@ -88,6 +88,16 @@ func (c *Ceremony) ValidPeer(id peer.ID) bool {
 	return false
 }
 
+// IsPartyExist double check whether the given party already in the list
+func (c *Ceremony) IsPartyExist(id peer.ID) bool {
+	for _, item := range c.JoinPartyRequests {
+		if item.Peer == id {
+			return true
+		}
+	}
+	return false
+}
+
 // GetParties return a list of peer id that will be doing the upcoming ceremony
 func (c *Ceremony) GetParties() []string {
 	var parties []string

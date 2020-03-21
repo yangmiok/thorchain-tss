@@ -159,6 +159,9 @@ func (pc *PartyCoordinator) onJoinParty(joinParty *JoinParty) (*Ceremony, error)
 	if !c.ValidPeer(joinParty.Peer) {
 		return nil, errUnknownPeer
 	}
+	if c.IsPartyExist(joinParty.Peer) {
+		return nil, errUnknownPeer
+	}
 	c.JoinPartyRequests = append(c.JoinPartyRequests, joinParty)
 	if !c.IsReady() {
 		// Ceremony is not ready , still waiting for more party to join
