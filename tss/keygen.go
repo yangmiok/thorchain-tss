@@ -73,7 +73,7 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 		}
 		// log the error and then suppress it , thus we could return appropriate blame to client
 		if result != nil {
-			t.logger.Error().Err(err).Msgf("fail to form keygen party-x: %s", result.Type)
+			t.logger.Error().Err(err).Msgf("fail to form keygen party: %s", result.Type)
 		}
 		return keygen.Response{
 			Status: common.Fail,
@@ -92,7 +92,7 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 			t.logger.Err(err).Msg("fail to get peers to blame")
 		}
 		blame.AddBlameNodes(pKey)
-		t.logger.Error().Err(err).Msgf("fail to form keygen party-y:%s", result.Type)
+		t.logger.Error().Err(err).Msgf("fail to form keygen party:%s", result.Type)
 		return keygen.Response{
 			Status: common.Fail,
 			Blame:  blame,
