@@ -58,6 +58,30 @@ func NewSignatureNotifier(host host.Host) *SignatureNotifier {
 	return s
 }
 
+func getSignatures(data []byte) ([]*bc.SignatureData, error) {
+
+	splitSignatures := bytes.Split(data, []byte(","))
+	var signatures []*bc.SignatureData
+	for _, eachSigHex := range splitSignatures {
+		if len(eachSigHex) == 0 {
+			break
+		}
+		eachSig := make([]byte, hex.DecodedLen(len(eachSigHex)))
+		_, err := hex.Decode(eachSig, eachSigHex)
+		if err != nil {
+			return nil, err
+		}
+
+		var signature bc.SignatureData
+		if err := proto.Unmarshal(eachSig, &signature); err != nil {
+			return nil, err
+		}
+		signatures = append(signatures, &signature)
+	}
+
+	return signatures, nil
+}
+
 // HandleStream handle signature notify stream
 func (s *SignatureNotifier) handleStream(stream network.Stream) {
 	defer func() {
@@ -88,7 +112,13 @@ func (s *SignatureNotifier) handleStream(stream network.Stream) {
 		logger.Debug().Msgf("notifier for message id(%s) not exist", msg.ID)
 		return
 	}
-	finished, err := n.ProcessSignature(msg.Signature)
+
+	signatures, err := getSignatures(msg.Signature)
+	if err != nil {
+		logger.Error().Err(err).Msg("fail to get the batch signature")
+		return
+	}
+	finished, err := n.ProcessSignature(signatures)
 	if err != nil {
 		logger.Error().Err(err).Msg("fail to update local signature data")
 		return
@@ -147,25 +177,26 @@ func (s *SignatureNotifier) sendOneMsgToPeer(m *signatureItem) error {
 	}
 
 	var buf bytes.Buffer
-	for _, each := range m.signatureData {
-		b, err := proto.Marshal(each)
-		if err != nil {
-			return fmt.Errorf("fail to marshal signature data to bytes:%w", err)
-		}
-		hexB := make([]byte, hex.EncodedLen(len(b)))
-		hex.Encode(hexB, b)
-		_, err = buf.Write(hexB)
-		if err != nil {
-			return err
-		}
-		_, err = buf.Write([]byte{','})
-		if err != nil {
-			return err
+	if m.signatureData != nil {
+		for _, each := range m.signatureData {
+			b, err := proto.Marshal(each)
+			if err != nil {
+				return fmt.Errorf("fail to marshal signature data to bytes:%w", err)
+			}
+			hexB := make([]byte, hex.EncodedLen(len(b)))
+			hex.Encode(hexB, b)
+			_, err = buf.Write(hexB)
+			if err != nil {
+				return err
+			}
+			_, err = buf.Write([]byte{','})
+			if err != nil {
+				return err
+			}
 		}
 		ks.Signature = buf.Bytes()
 		ks.KeysignStatus = messages.KeysignSignature_Success
 	}
-
 	ksBuf, err := proto.Marshal(ks)
 	if err != nil {
 		return fmt.Errorf("fail to marshal Keysign Signature to bytes:%w", err)
@@ -223,8 +254,8 @@ func (s *SignatureNotifier) removeNotifier(n *Notifier) {
 }
 
 // WaitForSignature wait until keysign finished and signature is available
-func (s *SignatureNotifier) WaitForSignature(messageID string, message []byte, poolPubKey string, timeout time.Duration) (*[]bc.SignatureData, error) {
-	n, err := NewNotifier(messageID, message, poolPubKey)
+func (s *SignatureNotifier) WaitForSignature(messageID string, messages [][]byte, poolPubKey string, timeout time.Duration) ([]*bc.SignatureData, error) {
+	n, err := NewNotifier(messageID, messages, poolPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create notifier")
 	}
@@ -237,6 +268,6 @@ func (s *SignatureNotifier) WaitForSignature(messageID string, message []byte, p
 	case <-s.stopChan:
 		return nil, errors.New("request to exit")
 	case <-time.After(timeout):
-		return nil, fmt.Errorf("timeout: didn't receive signature after %s", timeout)
+		return nil, fmt.Errorf("timeout: didn't receive signature after %s for message %v", timeout, messageID)
 	}
 }

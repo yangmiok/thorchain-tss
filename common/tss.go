@@ -42,7 +42,7 @@ type TssCommon struct {
 	unConfirmedMessages         map[string]*LocalCacheItem
 	localPeerID                 string
 	broadcastChannel            chan *messages.BroadcastMsgChan
-	TssMsg                      chan *messages.Message
+	TssMsg                      chan *p2p.Message
 	P2PPeers                    []peer.ID // most of tss message are broadcast, we store the peers ID to avoid iterating
 	BlamePeers                  Blame
 	msgID                       string
@@ -61,9 +61,9 @@ func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgCha
 		unConfirmedMessages:         make(map[string]*LocalCacheItem),
 		localPeerID:                 peerID,
 		broadcastChannel:            broadcastChannel,
-		TssMsg:                      make(chan *messages.Message, msgNum),
+		TssMsg:                      make(chan *p2p.Message, msgNum),
 		P2PPeers:                    nil,
-		BlamePeers:                  NewBlame(),
+		BlamePeers:                  Blame{},
 		msgID:                       msgID,
 		cachedWireBroadcastMsgLists: make(map[string][]BulkWireMsg),
 		cachedWireUnicastMsgLists:   make(map[string][]BulkWireMsg),
@@ -271,7 +271,7 @@ func (t *TssCommon) hashCheck(localCacheItem *LocalCacheItem) error {
 	return nil
 }
 
-func (t *TssCommon) sendBulkMsg(wiredMsgType string, tssMsgType messaages.THORChainTSSMessageType, wiredMsgList []BulkWireMsg) error {
+func (t *TssCommon) sendBulkMsg(wiredMsgType string, tssMsgType messages.THORChainTSSMessageType, wiredMsgList []BulkWireMsg) error {
 	// since all the messages in the list is the same round, so it must have the same dest
 	// we just need to get the routing info of the first message
 	r := wiredMsgList[0].Routing
@@ -320,7 +320,7 @@ func (t *TssCommon) sendBulkMsg(wiredMsgType string, tssMsgType messaages.THORCh
 	return nil
 }
 
-func (t *TssCommon) ProcessOutCh(msg btss.Message, tssMsgType p2p.THORChainTSSMessageType) error {
+func (t *TssCommon) ProcessOutCh(msg btss.Message, tssMsgType messages.THORChainTSSMessageType) error {
 	msgDat, r, err := msg.WireBytes()
 	// if we cannot get the wire share, the tss keygen will fail, we just quit.
 	if nil != err {

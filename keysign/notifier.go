@@ -1,6 +1,7 @@
 package keysign
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -12,18 +13,18 @@ import (
 
 // Notifier
 type Notifier struct {
-	MessageID    string
-	message    []byte // the message
+	messageID  string
+	messages   [][]byte // the message
 	poolPubKey string
-	resp         chan []*bc.SignatureData
+	resp       chan []*bc.SignatureData
 }
 
 // NewNotifier create a new instance of Notifier
-func NewNotifier(messageID string, message []byte, poolPubKey string) (*Notifier, error) {
+func NewNotifier(messageID string, messages [][]byte, poolPubKey string) (*Notifier, error) {
 	if len(messageID) == 0 {
 		return nil, errors.New("messageID is empty")
 	}
-	if len(message) == 0 {
+	if len(messages) == 0 {
 		return nil, errors.New("message is nil")
 	}
 	if len(poolPubKey) == 0 {
@@ -31,19 +32,37 @@ func NewNotifier(messageID string, message []byte, poolPubKey string) (*Notifier
 	}
 	return &Notifier{
 		messageID:  messageID,
-		message:    message,
+		messages:   messages,
 		poolPubKey: poolPubKey,
 		resp:       make(chan []*bc.SignatureData, 1),
 	}, nil
 }
 
-func (n *Notifier) verifySignature(data []*bc.SignatureData) (bool, error) {
+func (n *Notifier) verifySignature(sigs []*bc.SignatureData) (bool, error) {
 	// we should be able to use any of the pubkeys to verify the signature
 	pubKey, err := sdk.GetAccPubKeyBech32(n.poolPubKey)
 	if err != nil {
 		return false, fmt.Errorf("fail to get pubkey from bech32 pubkey string(%s):%w", n.poolPubKey, err)
 	}
-	return pubKey.VerifyBytes(n.message, n.getSignatureBytes(data)), nil
+	if len(sigs) != len(n.messages) {
+		return false, errors.New("message num and signature num does not match")
+	}
+	signatureMap := make(map[string]*bc.SignatureData)
+	for _, el := range sigs {
+		signatureMap[hex.EncodeToString(el.M)] = el
+	}
+
+	for _, el := range n.messages {
+		signature, ok := signatureMap[hex.EncodeToString(el)]
+		if !ok {
+			return false, nil
+		}
+		ret := pubKey.VerifyBytes(el, n.getSignatureBytes(signature))
+		if !ret {
+			return ret, nil
+		}
+	}
+	return true, nil
 }
 
 func (n *Notifier) getSignatureBytes(data *bc.SignatureData) []byte {

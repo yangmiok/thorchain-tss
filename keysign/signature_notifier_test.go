@@ -20,8 +20,8 @@ import (
 
 func TestSignatureNotifierHappyPath(t *testing.T) {
 	poolPubKey := `thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33`
-	messageToSign := "helloworld-test"
-	messageID, err := common.MsgToHashString([]byte(messageToSign))
+	messagesToSign := [][]byte{[]byte("helloworld-test")}
+	messageID, err := common.MsgToHashString([]byte("helloworld-test"))
 	assert.Nil(t, err)
 	p2p.ApplyDeadline = false
 	id1 := tnet.RandIdentityOrFatal(t)
@@ -74,18 +74,19 @@ func TestSignatureNotifierHappyPath(t *testing.T) {
 	var signature bc.SignatureData
 	err = json.Unmarshal(content, &signature)
 	assert.Nil(t, err)
+	signature.M = messagesToSign[0]
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sig, err := n1.WaitForSignature(messageID, []byte(messageToSign), poolPubKey, time.Second*30)
+		sig, err := n1.WaitForSignature(messageID, messagesToSign, poolPubKey, time.Second*30)
 		assert.Nil(t, err)
 		assert.NotNil(t, sig)
 	}()
-	assert.Nil(t, n2.BroadcastSignature(messageID, &signature, []peer.ID{
+	assert.Nil(t, n2.BroadcastSignature(messageID, []*bc.SignatureData{&signature}, []peer.ID{
 		p1, p3,
 	}))
-	assert.Nil(t, n3.BroadcastSignature(messageID, &signature, []peer.ID{
+	assert.Nil(t, n3.BroadcastSignature(messageID, []*bc.SignatureData{&signature}, []peer.ID{
 		p1, p2,
 	}))
 	wg.Wait()
