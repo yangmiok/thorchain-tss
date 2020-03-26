@@ -155,36 +155,20 @@ func (t *TssServer) requestToMsgId(request interface{}) (string, error) {
 	return common.MsgToHashString(dat)
 }
 
-func (t *TssServer) joinParty(msgID string, messageToSign []byte, keys []string) (*messages.JoinPartyResponse, peer.ID, error) {
-	noResponse := &messages.JoinPartyResponse{
-		Type: messages.JoinPartyResponse_Unknown,
-	}
+func (t *TssServer) joinParty(msgID string, keys []string) ([]peer.ID, error) {
 
-	//sort.SliceStable(keys, func(i, j int) bool {
-	//	return keys[i] < keys[j]
-	//})
 	peerIDs, err := GetPeerIDsFromPubKeys(keys)
 	if err != nil {
-		return noResponse, "", fmt.Errorf("fail to convert pub key to peer id: %w", err)
+		return nil, fmt.Errorf("fail to convert pub key to peer id: %w", err)
 	}
 	totalNodes := int32(len(keys))
-	//leader, err := p2p.LeaderNode(messageToSign, totalNodes)
-	//if err != nil {
-	//	return noResponse, "", fmt.Errorf("fail to get leader node: %w", err)
-	//}
-	//
-	//leaderPeerID, err := GetPeerIDFromPubKey(keys[leader])
-	//if err != nil {
-	//	return noResponse, leaderPeerID, fmt.Errorf("fail to get peer id from node pubkey: %w", err)
-	//}
-	//t.logger.Info().Msgf("leader peer: %s", leaderPeerID)
+
 	joinPartyReq := &messages.JoinPartyRequest{
 		ID: msgID,
 	}
-	fmt.Println("wwwwwwwwwwwsssssssssssssttttttttttt")
-	msg, err := t.partyCoordinator.JoinPartyWithRetry(joinPartyReq, peerIDs, totalNodes)
-	fmt.Printf("---------aaaaaaaaaaaaaaaaaaa---------?>%v\n", err)
-	return msg, "", err
+	//fixme we need to remove the threshold as it is useless now
+	onlinePeers, err := t.partyCoordinator.JoinPartyWithRetry(joinPartyReq, peerIDs, totalNodes)
+	return onlinePeers, err
 }
 
 // GetLocalPeerID return the local peer
