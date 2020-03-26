@@ -63,6 +63,7 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenMsg, msgID)
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenVerMsg, msgID)
+	fmt.Println("---------------wwwwwwwwwwwwwwnnnnnnnnnnnnnnnnhhhhhhhhhhhhhh")
 	result, leaderPeerID, err := t.joinParty(msgID, []byte(strings.Join(req.Keys, ",")), req.Keys)
 	if err != nil {
 		// just blame the leader node
