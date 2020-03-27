@@ -30,7 +30,6 @@ func NewPeerStatus(peers []peer.ID, mypeerID peer.ID) PeerStatus {
 	dat := make(map[peer.ID]bool)
 	for _, el := range peers {
 		if el == mypeerID {
-			dat[el] = true
 			continue
 		}
 		dat[el] = false
@@ -344,7 +343,8 @@ func (pc *PartyCoordinator) joinParty2(msg *messages.JoinPartyRequest) bool {
 		}(el)
 	}
 	wg.Wait()
-	if len(offline) == 0 {
+	_, curOffline := peerGroup.getPeersStatus()
+	if len(curOffline) == 0 {
 		return true
 	}
 	return false
@@ -471,7 +471,7 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 	pc.createJoinPartyGroups(msg.ID, peers, threshold)
 	defer pc.removePeerGroup(msg.ID)
 	bf := backoff.NewExponentialBackOff()
-	bf.MaxElapsedTime = time.Second * 10
+	bf.MaxElapsedTime = time.Second * 5
 	err := backoff.Retry(func() error {
 		ret := pc.joinParty2(msg)
 		if !ret {
@@ -487,5 +487,7 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 	}, bf)
 	peerGroup := pc.peersGroup[msg.ID]
 	onlinePeers, _ := peerGroup.getPeersStatus()
+	//we always set ourselves as online
+	onlinePeers = append(onlinePeers, pc.host.ID())
 	return onlinePeers, err
 }
