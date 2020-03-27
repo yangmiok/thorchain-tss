@@ -121,8 +121,8 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()
 	logger := pc.logger.With().Str("remote peer", remotePeer.String()).Logger()
 	logger.Debug().Msg("reading from join party request")
-	//payload, err := ReadStreamWithBuffer(stream)
-	payload, err := ioutil.ReadAll(stream)
+	payload, err := ReadStreamWithBuffer(stream)
+	//payload, err := ioutil.ReadAll(stream)
 	if err != nil {
 		logger.Err(err).Msgf("fail to read payload from stream")
 		return
@@ -158,10 +158,10 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 	}
 	pc.newFound.Store(newFound)
 
-	resp.Type = messages.JoinPartyResponse_Success
-	if err := pc.writeResponse(stream, resp); err != nil {
-		logger.Error().Err(err).Msg("fail to write response to stream")
-	}
+	//resp.Type = messages.JoinPartyResponse_Success
+	//if err := pc.writeResponse(stream, resp); err != nil {
+	//	logger.Error().Err(err).Msg("fail to write response to stream")
+	//}
 	fmt.Printf("now we write back------%v-----------------%v\n", time.Since(start), remotePeer)
 	return
 
@@ -327,24 +327,40 @@ func (pc *PartyCoordinator) joinParty2(msg *messages.JoinPartyRequest) bool {
 	for _, el := range offline {
 		go func(peer peer.ID) {
 			defer wg.Done()
-			ret, err := pc.getConfirmFromPeer(msg, peer)
-			if err != nil {
-				pc.logger.Error().Err(err).Msgf("fail to get join party confirmation from this peer %s\n", peer)
-				return
-			}
-			if ret {
-				newFound, err := peerGroup.updatePeer(el)
-				if err != nil {
-					pc.logger.Error().Err(err).Msg("cannot fine the peer")
-					return
-				}
-				pc.newFound.Store(newFound)
-			}
+			pc.getConfirmFromPeer(msg, peer)
+			return
+			//if err != nil {
+			//	pc.logger.Error().Err(err).Msgf("fail to get join party confirmation from this peer %s\n", peer)
+			//		return
+			//	}
+			//	if ret {
+			//		newFound, err := peerGroup.updatePeer(el)
+			//		if err != nil {
+			//			pc.logger.Error().Err(err).Msg("cannot fine the peer")
+			//			return
+			//		}
+			//		pc.newFound.Store(newFound)
+			//	}
 		}(el)
 	}
 	wg.Wait()
-	_, curOffline := peerGroup.getPeersStatus()
+	curOnline, curOffline := peerGroup.getPeersStatus()
 	if len(curOffline) == 0 {
+		var wg2 sync.WaitGroup
+		for _, el := range curOnline {
+			go func(peer peer.ID) {
+				wg2.Add(1)
+				defer wg2.Done()
+
+				joinPartyReq := &messages.JoinPartyRequest{
+					ID: msg.ID,
+				}
+				fmt.Printf("0000000000000-------->%v\n", joinPartyReq.ID)
+				pc.getConfirmFromPeer(joinPartyReq, peer)
+				return
+			}(el)
+		}
+		wg.Wait()
 		return true
 	}
 	return false
@@ -363,18 +379,22 @@ func (pc *PartyCoordinator) getConfirmFromPeer(msg *messages.JoinPartyRequest, r
 		return false, fmt.Errorf("fail to create stream to peer(%s):%w", remotePeer, err)
 	}
 	pc.logger.Info().Msgf("open stream to (%s) successfully", remotePeer)
-	defer func() {
-		if err := stream.Close(); err != nil {
-			pc.logger.Error().Err(err).Msg("fail to close stream")
-		}
-	}()
-	_, err = stream.Write(msgBuf)
+
+	//_, err = stream.Write(msgBuf)
+	err = WriteStreamWithBuffer(msgBuf, stream)
 	if err != nil {
 		if errReset := stream.Reset(); errReset != nil {
 			return false, errReset
 		}
 		return false, fmt.Errorf("fail to write message to stream:%w", err)
 	}
+
+	if err := stream.Close(); err != nil {
+		pc.logger.Error().Err(err).Msg("fail to close stream")
+	}
+	fmt.Print("heeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+	return false, errors.New("aaa")
+	//return true,nil
 	// because the test stream doesn't support deadline
 	if ApplyDeadline {
 		//set a read deadline here , in case the coordinator doesn't timeout appropriately , and keep client hanging there
@@ -386,15 +406,20 @@ func (pc *PartyCoordinator) getConfirmFromPeer(msg *messages.JoinPartyRequest, r
 	//respBuf, err := ReadStreamWithBuffer(stream)
 	respBuf, err := ioutil.ReadAll(stream)
 	if err != nil {
+		fmt.Println("111111111111444444444444444444444444444444444444444444444444444444444444444444444444")
 		if err != yamux.ErrConnectionReset {
+			fmt.Println("111111111111444555555555555555555")
 			return false, fmt.Errorf("fail to read response: %w", err)
 		}
 	}
+	fmt.Println("111111111111111111111111111111111")
 	if len(respBuf) == 0 {
 		return false, errors.New("fail to get response")
 	}
+	fmt.Print("222222222222222222222222222222222")
 	var resp messages.JoinPartyResponse
 	if err := proto.Unmarshal(respBuf, &resp); err != nil {
+		fmt.Print("2222222222223333333333333333333")
 		return false, fmt.Errorf("fail to unmarshal JoinGameResp: %w", err)
 	}
 	fmt.Printf("--------------$$$$$$$$$$$$$---%v from %v\n", resp.Type, remotePeer)
