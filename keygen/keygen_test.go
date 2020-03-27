@@ -123,6 +123,7 @@ func getPreparams(c *C) []*btsskeygen.LocalPreParams {
 func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 	sort.Strings(testPubKeys)
 	req := NewRequest(testPubKeys)
+	time.Sleep(time.Second * 5)
 	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
 	c.Assert(err, IsNil)
 	conf := common.TssConfig{
@@ -168,16 +169,13 @@ func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 	wg.Wait()
 }
 
-func (s *TssKeygenTestSuite) TestSignMessage(c *C) {
+func (s *TssKeygenTestSuite) TestGenerateKeyWithError(c *C) {
 	req := Request{
 		Keys: testPubKeys[:],
 	}
 	conf := common.TssConfig{}
 	stateManager := &storage.MockLocalStateManager{}
 	keyGenInstance := NewTssKeyGen("", conf, "", nil, nil, nil, nil, "test", stateManager)
-	signatureData, err := keyGenInstance.GenerateNewKey(req)
-	c.Assert(err, NotNil)
-	c.Assert(signatureData, IsNil)
 	generatedKey, err := keyGenInstance.GenerateNewKey(req)
 	c.Assert(err, NotNil)
 	c.Assert(generatedKey, IsNil)

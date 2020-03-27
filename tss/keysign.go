@@ -106,7 +106,6 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 			Blame:  blame,
 		}, nil
 
-		t.broadcastKeysignFailure(msgID, signers)
 	}
 
 	signatureData, err := keysignInstance.SignMessage(msgToSign, localStateItem, req.SignerPubKeys)

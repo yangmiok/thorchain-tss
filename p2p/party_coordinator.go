@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.uber.org/atomic"
 	"io/ioutil"
 	"sync"
 	"time"
@@ -21,67 +20,6 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/messages"
 )
 
-type PeerStatus struct {
-	peersResponse  map[peer.ID]bool
-	peerStatusLock *sync.RWMutex
-	newFound       chan bool
-}
-
-func NewPeerStatus(peers []peer.ID, mypeerID peer.ID) PeerStatus {
-	dat := make(map[peer.ID]bool)
-	for _, el := range peers {
-		if el == mypeerID {
-			continue
-		}
-		dat[el] = false
-	}
-	peerStatus := PeerStatus{
-		peersResponse:  dat,
-		peerStatusLock: &sync.RWMutex{},
-		newFound:       make(chan bool, len(peers)),
-	}
-	return peerStatus
-}
-
-func (ps *PeerStatus) getCoordinationStatus() bool {
-	_, offline := ps.getPeersStatus()
-	if len(offline) == 0 {
-		return true
-	}
-	return false
-}
-func (ps *PeerStatus) getPeersStatus() ([]peer.ID, []peer.ID) {
-	var online []peer.ID
-	var offline []peer.ID
-	ps.peerStatusLock.RLock()
-	defer ps.peerStatusLock.RUnlock()
-	for peer, val := range ps.peersResponse {
-		if val {
-			online = append(online, peer)
-		} else {
-			offline = append(offline, peer)
-		}
-	}
-
-	return online, offline
-}
-
-func (ps *PeerStatus) updatePeer(peer peer.ID) (bool, error) {
-	ps.peerStatusLock.Lock()
-	defer ps.peerStatusLock.Unlock()
-	val, ok := ps.peersResponse[peer]
-	if !ok {
-		return false, errors.New("key not found")
-	}
-	if !val {
-		ps.peersResponse[peer] = true
-		fmt.Printf("###########%v\n", ps.peersResponse)
-		return true, nil
-	}
-	fmt.Printf("####22222#######%v\n", ps.peersResponse)
-	return false, nil
-}
-
 type PartyCoordinator struct {
 	logger             zerolog.Logger
 	host               host.Host
@@ -89,10 +27,9 @@ type PartyCoordinator struct {
 	ceremonies         map[string]*Ceremony
 	stopChan           chan struct{}
 	timeout            time.Duration
-	peersGroup         map[string]PeerStatus
+	peersGroup         map[string]*PeerStatus
 	joinPartyGroupLock *sync.Mutex
 	threshold          int32
-	newFound           *atomic.Bool
 }
 
 // NewPartyCoordinator create a new instance of PartyCoordinator
@@ -107,7 +44,6 @@ func NewPartyCoordinator(host host.Host, timeout time.Duration) *PartyCoordinato
 		peersGroup:         make(map[string]PeerStatus),
 		joinPartyGroupLock: &sync.Mutex{},
 		threshold:          0,
-		newFound:           atomic.NewBool(false),
 	}
 	host.SetStreamHandler(joinPartyProtocol, pc.HandleStream)
 	return pc
@@ -131,12 +67,10 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 	logger := pc.logger.With().Str("remote peer", remotePeer.String()).Logger()
 	logger.Debug().Msg("reading from join party request")
 	payload, err := ReadStreamWithBuffer(stream)
-	//payload, err := ioutil.ReadAll(stream)
 	if err != nil {
 		logger.Err(err).Msgf("fail to read payload from stream")
 		return
 	}
-	fmt.Print("6666666666666666666666666666\n")
 	var msg messages.JoinPartyRequest
 	if err := proto.Unmarshal(payload, &msg); err != nil {
 		logger.Err(err).Msg("fail to unmarshal join party request")
@@ -148,13 +82,11 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 		pc.logger.Info().Msg("this party is not ready")
 		return
 	}
-	fmt.Printf("get update from inactive-----------000000000 of %v", remotePeer)
 	newFound, err := peerGroup.updatePeer(remotePeer)
 	if err != nil {
 		pc.logger.Error().Err(err).Msg("receive msg from unknown peer")
 		return
 	}
-	pc.newFound.Store(newFound)
 	if newFound {
 		peerGroup.newFound <- true
 	}
@@ -277,17 +209,19 @@ func (pc *PartyCoordinator) removePeerGroup(messageID string) {
 	delete(pc.peersGroup, messageID)
 }
 
-func (pc *PartyCoordinator) createJoinPartyGroups(messageID string, peers []string, threshold int32) {
+func (pc *PartyCoordinator) createJoinPartyGroups(messageID string, peers []string, threshold int32) (*PeerStatus, error) {
 
 	pIDs, err := pc.getPeerIDs(peers)
 	if err != nil {
 		pc.logger.Error().Err(err).Msg("fail to parse peer id")
+		return nil, err
 	}
 	pc.threshold = threshold
 	peerStatus := NewPeerStatus(pIDs, pc.host.ID())
 	pc.joinPartyGroupLock.Lock()
-	pc.peersGroup[messageID] = peerStatus
+	pc.peersGroup[messageID] = &peerStatus
 	pc.joinPartyGroupLock.Unlock()
+	return &peerStatus, nil
 }
 
 func (pc *PartyCoordinator) createCeremony(messageID string, peers []string, threshold int32) {
@@ -318,65 +252,16 @@ func (pc *PartyCoordinator) sendRequestToAll(msg *messages.JoinPartyRequest, pee
 	for _, el := range peers {
 		go func(peer peer.ID) {
 			defer wg.Done()
-			_, err := pc.getConfirmFromPeer(msg, peer)
-			fmt.Printf("--------wwwww--------->%v\n", err)
-			return
+			_, err := pc.sendRequestToPeer(msg, peer)
+			if err != nil {
+				pc.logger.Error().Err(err).Msg("error in send the join party request to peer")
+			}
 		}(el)
 	}
 	wg.Wait()
-	return
 }
 
-func (pc *PartyCoordinator) joinParty2(msg *messages.JoinPartyRequest) bool {
-	pc.joinPartyGroupLock.Lock()
-	peerGroup := pc.peersGroup[msg.ID]
-	pc.joinPartyGroupLock.Unlock()
-	_, offline := peerGroup.getPeersStatus()
-	var wg sync.WaitGroup
-	wg.Add(len(offline))
-	for _, el := range offline {
-		go func(peer peer.ID) {
-			defer wg.Done()
-			pc.getConfirmFromPeer(msg, peer)
-			return
-			//if err != nil {
-			//	pc.logger.Error().Err(err).Msgf("fail to get join party confirmation from this peer %s\n", peer)
-			//		return
-			//	}
-			//	if ret {
-			//		newFound, err := peerGroup.updatePeer(el)
-			//		if err != nil {
-			//			pc.logger.Error().Err(err).Msg("cannot fine the peer")
-			//			return
-			//		}
-			//		pc.newFound.Store(newFound)
-			//	}
-		}(el)
-	}
-	wg.Wait()
-	curOnline, curOffline := peerGroup.getPeersStatus()
-	if len(curOffline) == 0 {
-		var wg2 sync.WaitGroup
-		for _, el := range curOnline {
-			go func(peer peer.ID) {
-				wg2.Add(1)
-				defer wg2.Done()
-
-				joinPartyReq := &messages.JoinPartyRequest{
-					ID: msg.ID,
-				}
-				fmt.Printf("0000000000000-------->%v\n", joinPartyReq.ID)
-				pc.getConfirmFromPeer(joinPartyReq, peer)
-				return
-			}(el)
-		}
-		wg.Wait()
-		return true
-	}
-	return false
-}
-
-func (pc *PartyCoordinator) getConfirmFromPeer(msg *messages.JoinPartyRequest, remotePeer peer.ID) (bool, error) {
+func (pc *PartyCoordinator) sendRequestToPeer(msg *messages.JoinPartyRequest, remotePeer peer.ID) (bool, error) {
 
 	msgBuf, err := proto.Marshal(msg)
 	if err != nil {
@@ -388,9 +273,13 @@ func (pc *PartyCoordinator) getConfirmFromPeer(msg *messages.JoinPartyRequest, r
 	if err != nil {
 		return false, fmt.Errorf("fail to create stream to peer(%s):%w", remotePeer, err)
 	}
+	defer func() {
+		if err := stream.Close(); err != nil {
+			pc.logger.Error().Err(err).Msg("fail to close stream")
+		}
+	}()
 	pc.logger.Info().Msgf("open stream to (%s) successfully", remotePeer)
 
-	//_, err = stream.Write(msgBuf)
 	err = WriteStreamWithBuffer(msgBuf, stream)
 	if err != nil {
 		if errReset := stream.Reset(); errReset != nil {
@@ -399,46 +288,7 @@ func (pc *PartyCoordinator) getConfirmFromPeer(msg *messages.JoinPartyRequest, r
 		return false, fmt.Errorf("fail to write message to stream:%w", err)
 	}
 
-	if err := stream.Close(); err != nil {
-		pc.logger.Error().Err(err).Msg("fail to close stream")
-	}
-	fmt.Printf("heeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-----%v\n", remotePeer)
 	return false, nil
-	//return true,nil
-	// because the test stream doesn't support deadline
-	if ApplyDeadline {
-		//set a read deadline here , in case the coordinator doesn't timeout appropriately , and keep client hanging there
-		if err := stream.SetReadDeadline(time.Now().Add(time.Second * 3)); err != nil {
-			return false, fmt.Errorf("fail to set read deadline")
-		}
-	}
-	// read response
-	//respBuf, err := ReadStreamWithBuffer(stream)
-	respBuf, err := ioutil.ReadAll(stream)
-	if err != nil {
-		fmt.Println("111111111111444444444444444444444444444444444444444444444444444444444444444444444444")
-		if err != yamux.ErrConnectionReset {
-			fmt.Println("111111111111444555555555555555555")
-			return false, fmt.Errorf("fail to read response: %w", err)
-		}
-	}
-	fmt.Println("111111111111111111111111111111111")
-	if len(respBuf) == 0 {
-		return false, errors.New("fail to get response")
-	}
-	fmt.Print("222222222222222222222222222222222")
-	var resp messages.JoinPartyResponse
-	if err := proto.Unmarshal(respBuf, &resp); err != nil {
-		fmt.Print("2222222222223333333333333333333")
-		return false, fmt.Errorf("fail to unmarshal JoinGameResp: %w", err)
-	}
-	fmt.Printf("--------------$$$$$$$$$$$$$---%v from %v\n", resp.Type, remotePeer)
-	if resp.Type == messages.JoinPartyResponse_Success {
-		fmt.Printf("get response from proactive$$$$$$$$$$$$$$$$$---%v\n", remotePeer)
-		return true, nil
-	}
-	pc.logger.Error().Msgf("fail to get response from this peer, response type is %v", resp.Type.String())
-	return false, errors.New("p2p fail unknown")
 }
 
 // JoinParty join a ceremony , it could be keygen or key sign
@@ -478,8 +328,8 @@ func (pc *PartyCoordinator) JoinParty(remotePeer peer.ID, msg *messages.JoinPart
 	// because the test stream doesn't support deadline
 	if ApplyDeadline {
 		// set a read deadline here , in case the coordinator doesn't timeout appropriately , and keep client hanging there
-		//timeout := pc.timeout + time.Second
-		if err := stream.SetReadDeadline(time.Now().Add(time.Second * 20)); err != nil {
+		timeout := pc.timeout + time.Second
+		if err := stream.SetReadDeadline(time.Now().Add(timeout)); err != nil {
 			return nil, fmt.Errorf("fail to set read deadline")
 		}
 	}
@@ -500,23 +350,18 @@ func (pc *PartyCoordinator) JoinParty(remotePeer peer.ID, msg *messages.JoinPart
 	return &resp, nil
 }
 
-func (pc *PartyCoordinator) checkPeerStatus() {
-
-}
-
 // JoinPartyWithRetry this method provide the functionality to join party with retry and backoff
 func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, peers []string, threshold int32) ([]peer.ID, error) {
-
-	pc.createJoinPartyGroups(msg.ID, peers, threshold)
+	peerGroup, err := pc.createJoinPartyGroups(msg.ID, peers, threshold)
+	if err != nil {
+		pc.logger.Error().Err(err).Msg("fail to create the join party group")
+		return nil, err
+	}
 	defer pc.removePeerGroup(msg.ID)
-	pc.joinPartyGroupLock.Lock()
-	peerGroup := pc.peersGroup[msg.ID]
-	pc.joinPartyGroupLock.Unlock()
 	_, offline := peerGroup.getPeersStatus()
 
 	bf := backoff.NewExponentialBackOff()
-	bf.MaxElapsedTime = time.Second * 5
-	fmt.Printf("we send to--------%v\n", offline)
+	bf.MaxElapsedTime = pc.timeout
 	var wg sync.WaitGroup
 	go func() {
 		wg.Add(1)
@@ -524,33 +369,30 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 		pc.sendRequestToAll(msg, offline)
 	}()
 
-	err := backoff.Retry(func() error {
+	err = backoff.Retry(func() error {
 		ret := peerGroup.getCoordinationStatus()
 		if ret {
 			return nil
 		}
-
 		select {
 		case <-peerGroup.newFound:
-			fmt.Printf("WWWWWWWWWWWWWAAAAAAAAAAAA>>>>>>>>>>>>>>>>\n")
+			pc.logger.Info().Msg("we have found the new peer, reset the backoff timer")
 			bf.Reset()
 		default:
-			fmt.Print("NNNNNNNNNNNNNNN---new peer\n")
+			pc.logger.Debug().Msg("no new peer found")
 		}
 		return errors.New("not all party are ready")
 	}, bf)
 
+	wg.Wait()
 	onlinePeers, _ := peerGroup.getPeersStatus()
+	pc.sendRequestToAll(msg, onlinePeers)
+
 	//we always set ourselves as online
 	onlinePeers = append(onlinePeers, pc.host.ID())
-	wg.Wait()
-	pc.sendRequestToAll(msg, onlinePeers)
-	fmt.Printf("wewww return...................\n")
-
 	if len(onlinePeers) == len(peers) {
 
 		return onlinePeers, nil
 	}
-
 	return onlinePeers, err
 }

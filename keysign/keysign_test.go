@@ -117,6 +117,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 		c.Skip("skip the test")
 		return
 	}
+	time.Sleep(time.Second * 5)
 	sort.Strings(testPubKeys)
 	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys)
 	messageID, err := common.MsgToHashString([]byte(req.Message))
