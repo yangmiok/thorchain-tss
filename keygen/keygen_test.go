@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/cenkalti/backoff/v4"
 	"io/ioutil"
 	"os"
 	"path"
@@ -68,6 +69,8 @@ func (s *TssKeygenTestSuite) SetUpTest(c *C) {
 	multiAddr, err := maddr.NewMultiaddr(bootstrapPeer)
 	c.Assert(err, IsNil)
 	s.preParams = getPreparams(c)
+	bf := backoff.NewExponentialBackOff()
+	bf.MaxElapsedTime = time.Second * 2
 	for i := 0; i < s.partyNum; i++ {
 		buf, err := base64.StdEncoding.DecodeString(testPriKeyArr[i])
 		c.Assert(err, IsNil)
@@ -81,7 +84,11 @@ func (s *TssKeygenTestSuite) SetUpTest(c *C) {
 		}
 		comm, err := p2p.NewCommunication("asgard", []maddr.Multiaddr{multiAddr}, ports[i])
 		c.Assert(err, IsNil)
-		c.Assert(comm.Start(buf), IsNil)
+
+		err = backoff.Retry(func() error {
+			return comm.Start(buf)
+		}, bf)
+		c.Assert(err, IsNil)
 		go comm.ProcessBroadcast()
 		s.comms[i] = comm
 	}

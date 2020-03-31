@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/cenkalti/backoff/v4"
 	"io/ioutil"
 	"sort"
 	"sync"
@@ -86,6 +87,8 @@ func (s *TssKeysisgnTestSuite) SetUpTest(c *C) {
 	bootstrapPeer := "/ip4/127.0.0.1/tcp/17666/p2p/16Uiu2HAm4TmEzUqy3q3Dv7HvdoSboHk5sFj2FH3npiN5vDbJC6gh"
 	multiAddr, err := maddr.NewMultiaddr(bootstrapPeer)
 	c.Assert(err, IsNil)
+	bf := backoff.NewExponentialBackOff()
+	bf.MaxElapsedTime = time.Second * 2
 	for i := 0; i < s.partyNum; i++ {
 		buf, err := base64.StdEncoding.DecodeString(testPriKeyArr[i])
 		c.Assert(err, IsNil)
@@ -99,7 +102,11 @@ func (s *TssKeysisgnTestSuite) SetUpTest(c *C) {
 		}
 		comm, err := p2p.NewCommunication("asgard", []maddr.Multiaddr{multiAddr}, ports[i])
 		c.Assert(err, IsNil)
-		c.Assert(comm.Start(buf), IsNil)
+
+		err = backoff.Retry(func() error {
+			return comm.Start(buf)
+		}, bf)
+		c.Assert(err, IsNil)
 		go comm.ProcessBroadcast()
 		s.comms[i] = comm
 	}
