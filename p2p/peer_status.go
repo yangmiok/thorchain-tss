@@ -13,7 +13,7 @@ type PeerStatus struct {
 	newFound       chan bool
 }
 
-func NewPeerStatus(peerNodes []peer.ID, myPeerID peer.ID) PeerStatus {
+func NewPeerStatus(peerNodes []peer.ID, myPeerID peer.ID) *PeerStatus {
 	dat := make(map[peer.ID]bool)
 	for _, el := range peerNodes {
 		if el == myPeerID {
@@ -21,7 +21,7 @@ func NewPeerStatus(peerNodes []peer.ID, myPeerID peer.ID) PeerStatus {
 		}
 		dat[el] = false
 	}
-	peerStatus := PeerStatus{
+	peerStatus := &PeerStatus{
 		peersResponse:  dat,
 		peerStatusLock: &sync.RWMutex{},
 		newFound:       make(chan bool, len(peerNodes)),

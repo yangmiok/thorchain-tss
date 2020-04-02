@@ -2,7 +2,6 @@ package p2p
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -68,8 +67,9 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 		logger.Err(err).Msg("fail to unmarshal join party request")
 		return
 	}
-
+	pc.joinPartyGroupLock.Lock()
 	peerGroup, ok := pc.peersGroup[msg.ID]
+	pc.joinPartyGroupLock.Unlock()
 	if !ok {
 		pc.logger.Info().Msg("this party is not ready")
 		return
@@ -82,8 +82,6 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 	if newFound {
 		peerGroup.newFound <- true
 	}
-
-	return
 }
 
 func (pc *PartyCoordinator) removePeerGroup(messageID string) {
@@ -93,17 +91,16 @@ func (pc *PartyCoordinator) removePeerGroup(messageID string) {
 }
 
 func (pc *PartyCoordinator) createJoinPartyGroups(messageID string, peers []string) (*PeerStatus, error) {
-
 	pIDs, err := pc.getPeerIDs(peers)
 	if err != nil {
 		pc.logger.Error().Err(err).Msg("fail to parse peer id")
 		return nil, err
 	}
-	peerStatus := NewPeerStatus(pIDs, pc.host.ID())
 	pc.joinPartyGroupLock.Lock()
-	pc.peersGroup[messageID] = &peerStatus
-	pc.joinPartyGroupLock.Unlock()
-	return &peerStatus, nil
+	defer pc.joinPartyGroupLock.Unlock()
+	peerStatus := NewPeerStatus(pIDs, pc.host.ID())
+	pc.peersGroup[messageID] = peerStatus
+	return peerStatus, nil
 }
 
 func (pc *PartyCoordinator) getPeerIDs(ids []string) ([]peer.ID, error) {
@@ -124,8 +121,7 @@ func (pc *PartyCoordinator) sendRequestToAll(msg *messages.JoinPartyRequest, pee
 	for _, el := range peers {
 		go func(peer peer.ID) {
 			defer wg.Done()
-			_, err := pc.sendRequestToPeer(msg, peer)
-			if err != nil {
+			if err := pc.sendRequestToPeer(msg, peer); err != nil {
 				pc.logger.Error().Err(err).Msg("error in send the join party request to peer")
 			}
 		}(el)
@@ -133,17 +129,16 @@ func (pc *PartyCoordinator) sendRequestToAll(msg *messages.JoinPartyRequest, pee
 	wg.Wait()
 }
 
-func (pc *PartyCoordinator) sendRequestToPeer(msg *messages.JoinPartyRequest, remotePeer peer.ID) (bool, error) {
-
+func (pc *PartyCoordinator) sendRequestToPeer(msg *messages.JoinPartyRequest, remotePeer peer.ID) error {
 	msgBuf, err := proto.Marshal(msg)
 	if err != nil {
-		return false, fmt.Errorf("fail to marshal msg to bytes: %w", err)
+		return fmt.Errorf("fail to marshal msg to bytes: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 	stream, err := pc.host.NewStream(ctx, remotePeer, joinPartyProtocol)
 	if err != nil {
-		return false, fmt.Errorf("fail to create stream to peer(%s):%w", remotePeer, err)
+		return fmt.Errorf("fail to create stream to peer(%s):%w", remotePeer, err)
 	}
 	defer func() {
 		if err := stream.Close(); err != nil {
@@ -155,15 +150,15 @@ func (pc *PartyCoordinator) sendRequestToPeer(msg *messages.JoinPartyRequest, re
 	err = WriteStreamWithBuffer(msgBuf, stream)
 	if err != nil {
 		if errReset := stream.Reset(); errReset != nil {
-			return false, errReset
+			return errReset
 		}
-		return false, fmt.Errorf("fail to write message to stream:%w", err)
+		return fmt.Errorf("fail to write message to stream:%w", err)
 	}
 
-	return false, nil
+	return nil
 }
 
-// JoinPartyWithRetry this method provide the functionality to join party with retry and backoff
+// JoinPartyWithRetry this method provide the functionality to join party with retry and back off
 func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, peers []string) ([]peer.ID, error) {
 	peerGroup, err := pc.createJoinPartyGroups(msg.ID, peers)
 	if err != nil {
@@ -171,40 +166,41 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 		return nil, err
 	}
 	defer pc.removePeerGroup(msg.ID)
+	// at the beginning , all the peers should be offline
 	_, offline := peerGroup.getPeersStatus()
-
 	bf := backoff.NewExponentialBackOff()
 	bf.MaxElapsedTime = pc.timeout
 	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		defer wg.Done()
 		pc.sendRequestToAll(msg, offline)
 	}()
-
-	err = backoff.Retry(func() error {
-		ret := peerGroup.getCoordinationStatus()
-		if ret {
-			return nil
+	timeoutChan := time.After(pc.timeout)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-peerGroup.newFound:
+				pc.logger.Info().Msg("we have found the new peer")
+				if peerGroup.getCoordinationStatus() {
+					return
+				}
+			case <-timeoutChan:
+				// timeout
+				return
+			}
 		}
-		select {
-		case <-peerGroup.newFound:
-			pc.logger.Info().Msg("we have found the new peer, reset the backoff timer")
-			bf.Reset()
-		default:
-			pc.logger.Debug().Msg("no new peer found")
-		}
-		return errors.New("not all party are ready")
-	}, bf)
+	}()
 
 	wg.Wait()
 	onlinePeers, _ := peerGroup.getPeersStatus()
 	pc.sendRequestToAll(msg, onlinePeers)
 
-	//we always set ourselves as online
+	// we always set ourselves as online
 	onlinePeers = append(onlinePeers, pc.host.ID())
 	if len(onlinePeers) == len(peers) {
-
 		return onlinePeers, nil
 	}
 	return onlinePeers, err
