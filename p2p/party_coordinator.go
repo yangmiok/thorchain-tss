@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -15,6 +16,10 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/tss/go-tss/messages"
+)
+
+var (
+	errJoinPartyTimeout = errors.New("fail to join party, timeout")
 )
 
 type PartyCoordinator struct {
@@ -176,6 +181,7 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 		defer wg.Done()
 		pc.sendRequestToAll(msg, offline)
 	}()
+	// this is the total time TSS will wait for the party to form
 	timeoutChan := time.After(pc.timeout)
 	wg.Add(1)
 	go func() {
@@ -202,5 +208,5 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 	if len(onlinePeers) == len(peers) {
 		return onlinePeers, nil
 	}
-	return onlinePeers, err
+	return onlinePeers, errJoinPartyTimeout
 }

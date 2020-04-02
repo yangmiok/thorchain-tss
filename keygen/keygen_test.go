@@ -123,7 +123,7 @@ func getPreparams(c *C) []*btsskeygen.LocalPreParams {
 func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 	sort.Strings(testPubKeys)
 	req := NewRequest(testPubKeys)
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 1)
 	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
 	c.Assert(err, IsNil)
 	conf := common.TssConfig{

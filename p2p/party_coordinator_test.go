@@ -85,13 +85,12 @@ func TestNewPartyCoordinator(t *testing.T) {
 
 func TestNewPartyCoordinatorTimeOut(t *testing.T) {
 	ApplyDeadline = false
-
-	timeout := time.Second * 3
+	timeout := time.Second
 	hosts := setupHosts(t, 4)
-	var pcs []PartyCoordinator
+	var pcs []*PartyCoordinator
 	var peers []string
 	for _, el := range hosts {
-		pcs = append(pcs, *NewPartyCoordinator(el, timeout))
+		pcs = append(pcs, NewPartyCoordinator(el, timeout))
 	}
 	sort.Slice(pcs, func(i, j int) bool {
 		return pcs[i].host.ID().String() > pcs[j].host.ID().String()
@@ -115,13 +114,10 @@ func TestNewPartyCoordinatorTimeOut(t *testing.T) {
 
 	for _, el := range pcs[:2] {
 		wg.Add(1)
-
-		go func(coordinator PartyCoordinator) {
+		go func(coordinator *PartyCoordinator) {
 			defer wg.Done()
 			onlinePeers, err := coordinator.JoinPartyWithRetry(&joinPartyReq, peers)
-
-			assert.Errorf(t, err, "not all party are ready")
-
+			assert.Errorf(t, err, errJoinPartyTimeout.Error())
 			var onlinePeersStr []string
 			for _, el := range onlinePeers {
 				onlinePeersStr = append(onlinePeersStr, el.String())
