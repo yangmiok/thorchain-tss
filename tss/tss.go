@@ -156,7 +156,6 @@ func (t *TssServer) requestToMsgId(request interface{}) (string, error) {
 }
 
 func (t *TssServer) joinParty(msgID string, keys []string) ([]peer.ID, error) {
-
 	peerIDs, err := GetPeerIDsFromPubKeys(keys)
 	if err != nil {
 		return nil, fmt.Errorf("fail to convert pub key to peer id: %w", err)
@@ -165,7 +164,7 @@ func (t *TssServer) joinParty(msgID string, keys []string) ([]peer.ID, error) {
 	joinPartyReq := &messages.JoinPartyRequest{
 		ID: msgID,
 	}
-	//fixme we need to remove the threshold as it is useless now
+	// fixme we need to remove the threshold as it is useless now
 	onlinePeers, err := t.partyCoordinator.JoinPartyWithRetry(joinPartyReq, peerIDs)
 	return onlinePeers, err
 }

@@ -197,7 +197,6 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 	wg.Wait()
 	onlinePeers, _ := peerGroup.getPeersStatus()
 	pc.sendRequestToAll(msg, onlinePeers)
-
 	// we always set ourselves as online
 	onlinePeers = append(onlinePeers, pc.host.ID())
 	if len(onlinePeers) == len(peers) {

@@ -18,7 +18,6 @@ import (
 )
 
 func setupHosts(t *testing.T, n int) []host.Host {
-
 	mn := mocknet.New(context.Background())
 	var hosts []host.Host
 	for i := 0; i < n; i++ {
@@ -70,7 +69,7 @@ func TestNewPartyCoordinator(t *testing.T) {
 
 		go func(coordinator PartyCoordinator) {
 			defer wg.Done()
-			//we simulate different nodes join at different time
+			// we simulate different nodes join at different time
 			time.Sleep(time.Second * time.Duration(rand.Int()%10))
 			onlinePeers, err := coordinator.JoinPartyWithRetry(&joinPartyReq, peers)
 			if err != nil {

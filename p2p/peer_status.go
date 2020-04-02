@@ -36,6 +36,7 @@ func (ps *PeerStatus) getCoordinationStatus() bool {
 	}
 	return false
 }
+
 func (ps *PeerStatus) getPeersStatus() ([]peer.ID, []peer.ID) {
 	var online []peer.ID
 	var offline []peer.ID
