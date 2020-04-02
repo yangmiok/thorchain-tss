@@ -164,7 +164,6 @@ func (t *TssServer) joinParty(msgID string, keys []string) ([]peer.ID, error) {
 	joinPartyReq := &messages.JoinPartyRequest{
 		ID: msgID,
 	}
-	// fixme we need to remove the threshold as it is useless now
 	onlinePeers, err := t.partyCoordinator.JoinPartyWithRetry(joinPartyReq, peerIDs)
 	return onlinePeers, err
 }
