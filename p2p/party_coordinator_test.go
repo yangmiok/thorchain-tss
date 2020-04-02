@@ -60,7 +60,6 @@ func TestNewPartyCoordinator(t *testing.T) {
 	}()
 
 	msgID := go_tss.RandStringBytesMask(64)
-	threshold := int32(4)
 	joinPartyReq := messages.JoinPartyRequest{
 		ID: msgID,
 	}
@@ -73,7 +72,7 @@ func TestNewPartyCoordinator(t *testing.T) {
 			defer wg.Done()
 			//we simulate different nodes join at different time
 			time.Sleep(time.Second * time.Duration(rand.Int()%10))
-			onlinePeers, err := coordinator.JoinPartyWithRetry(&joinPartyReq, peers, threshold)
+			onlinePeers, err := coordinator.JoinPartyWithRetry(&joinPartyReq, peers)
 			if err != nil {
 				t.Error(err)
 			}
@@ -109,7 +108,6 @@ func TestNewPartyCoordinatorTimeOut(t *testing.T) {
 	}()
 
 	msgID := go_tss.RandStringBytesMask(64)
-	threshold := int32(4)
 
 	joinPartyReq := messages.JoinPartyRequest{
 		ID: msgID,
@@ -121,7 +119,7 @@ func TestNewPartyCoordinatorTimeOut(t *testing.T) {
 
 		go func(coordinator PartyCoordinator) {
 			defer wg.Done()
-			onlinePeers, err := coordinator.JoinPartyWithRetry(&joinPartyReq, peers, threshold)
+			onlinePeers, err := coordinator.JoinPartyWithRetry(&joinPartyReq, peers)
 
 			assert.Errorf(t, err, "not all party are ready")
 
