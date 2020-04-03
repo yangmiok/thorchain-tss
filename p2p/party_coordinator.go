@@ -171,7 +171,6 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 		return nil, err
 	}
 	defer pc.removePeerGroup(msg.ID)
-	// at the beginning , all the peers should be offline
 	_, offline := peerGroup.getPeersStatus()
 	bf := backoff.NewExponentialBackOff()
 	bf.MaxElapsedTime = pc.timeout
