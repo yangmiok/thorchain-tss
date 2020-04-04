@@ -12,18 +12,20 @@ import (
 	"math"
 	"math/big"
 	"os"
-
-	mapset "github.com/deckarep/golang-set"
-	"gitlab.com/thorchain/tss/go-tss/messages"
+	"sort"
+	"strconv"
 
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/btcsuite/btcd/btcec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	mapset "github.com/deckarep/golang-set"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
+
+	"gitlab.com/thorchain/tss/go-tss/messages"
 )
 
 func Contains(s []*btss.PartyID, e *btss.PartyID) bool {
@@ -117,6 +119,17 @@ func InitLog(level string, pretty bool, serviceValue string) {
 	log.Logger = log.Output(out).With().Str("service", serviceValue).Logger()
 }
 
+func partyIDtoPubKey(party *btss.PartyID) (string, error) {
+	partyKeyBytes := party.GetKey()
+	var pk secp256k1.PubKeySecp256k1
+	copy(pk[:], partyKeyBytes)
+	pubKey, err := sdk.Bech32ifyAccPub(pk)
+	if err != nil {
+		return "", err
+	}
+	return pubKey, nil
+}
+
 func AccPubKeysFromPartyIDs(partyIDs []string, partyIDMap map[string]*btss.PartyID) ([]string, error) {
 	pubKeys := make([]string, 0)
 	for _, partyID := range partyIDs {
@@ -124,10 +137,7 @@ func AccPubKeysFromPartyIDs(partyIDs []string, partyIDMap map[string]*btss.Party
 		if !ok {
 			return nil, errors.New("cannot find the blame party")
 		}
-		blamePartyKeyBytes := blameParty.GetKey()
-		var pk secp256k1.PubKeySecp256k1
-		copy(pk[:], blamePartyKeyBytes)
-		blamedPubKey, err := sdk.Bech32ifyAccPub(pk)
+		blamedPubKey, err := partyIDtoPubKey(blameParty)
 		if err != nil {
 			return nil, err
 		}
@@ -216,6 +226,9 @@ func (t *TssCommon) GetBlamePubKeysLists(peer []string) ([]string, []string, err
 	return inList, notInlist, err
 }
 
+// for the last round, we first check whether the stored share which means it get the majority of the peers to accept
+// this share. We then, find the missing one to blame, if he is honest he must get 2/3 peers accept his share(given the
+// condition that 2/3 of the peers are honest)
 func (t *TssCommon) TssTimeoutBlame(lastMessageType string) ([]string, error) {
 	peersSet := mapset.NewSet()
 	standbySet := mapset.NewSet()
@@ -246,78 +259,34 @@ func (t *TssCommon) TssTimeoutBlame(lastMessageType string) ([]string, error) {
 	return blamePubKeys, nil
 }
 
-func (t *TssCommon) findBlamePeers(localCacheItem *LocalCacheItem, dataOwnerP2PID string) ([]string, error) {
-	// our tss is based on the assumption that 2/3 of the nodes are honest. we define the majority as 2/3 node,
-	// Then we have the following scenarios:
-	// if our hash is the same with the majority, we blame the minority and the msg owner.
-	// if our hash is the same with the one of the minorities, we blame the msg owner.
-	blamePeers := make([]string, 0)
-	hashToPeers := make(map[string][]string)
-	ourHash := localCacheItem.Hash
-	localCacheItem.lock.Lock()
-	defer localCacheItem.lock.Unlock()
-	for P2PID, hashValue := range localCacheItem.ConfirmedList {
-		if peers, ok := hashToPeers[hashValue]; ok {
-			peers = append(peers, P2PID)
-			hashToPeers[hashValue] = peers
+func getHighestFreq(confirmedList map[string]string) (string, int, error) {
+	if len(confirmedList) == 0 {
+		return "", 0, errors.New("empty input")
+	}
+	freq := make(map[string]int, len(confirmedList))
+	hashPeerMap := make(map[string]string, len(confirmedList))
+	for peer, n := range confirmedList {
+		freq[n]++
+		hashPeerMap[n] = peer
+	}
+
+	sFreq := make([][2]string, 0, len(freq))
+	for n, f := range freq {
+		sFreq = append(sFreq, [2]string{n, strconv.FormatInt(int64(f), 10)})
+	}
+	sort.Slice(sFreq, func(i, j int) bool {
+		if sFreq[i][1] > sFreq[j][1] {
+			return true
 		} else {
-			hashToPeers[hashValue] = []string{P2PID}
+			return false
 		}
-	}
-
-	threshold, err := GetThreshold(len(t.partyInfo.PartyIDMap))
+	},
+	)
+	freqInt, err := strconv.Atoi(sFreq[0][1])
 	if err != nil {
-		return nil, err
+		return "", 0, err
 	}
-	members := hashToPeers[ourHash]
-	if len(members) < threshold {
-		for key, peers := range hashToPeers {
-			if key == ourHash {
-				continue
-			}
-			// we blame all the rest of the minorities
-			if len(peers) < threshold {
-				blamePeers = append(blamePeers, peers...)
-			}
-		}
-		// lastly, we add the data owner
-		blamePeers = append(blamePeers, dataOwnerP2PID)
-		return blamePeers, nil
-	}
-
-	for key, peers := range hashToPeers {
-		if key == ourHash {
-			continue
-		}
-		blamePeers = append(blamePeers, peers...)
-	}
-	// lastly, we add the data owner
-	blamePeers = append(blamePeers, dataOwnerP2PID)
-	return blamePeers, nil
-}
-
-func (t *TssCommon) getHashCheckBlamePeers(localCacheItem *LocalCacheItem, hashCheckErr error) ([]string, error) {
-	// here we do the blame on the error on hash inconsistency
-	// if we find the msg owner try to send the hash to us, we blame him and ignore the blame of the rest
-	// of the other nodes, cause others may also be the victims.
-	var blameP2PIDs []string
-
-	dataOwner := localCacheItem.Msg.Routing.From
-	dataOwnerP2PID, ok := t.PartyIDtoP2PID[dataOwner.Id]
-	if !ok {
-		t.logger.Warn().Msgf("error in find the data Owner P2PID\n")
-		return nil, errors.New("error in find the data Owner P2PID")
-	}
-	switch hashCheckErr {
-	case ErrHashFromOwner:
-		blameP2PIDs = append(blameP2PIDs, dataOwnerP2PID.String())
-		return blameP2PIDs, nil
-	case ErrHashFromPeer:
-		blameP2PIDs, err := t.findBlamePeers(localCacheItem, dataOwnerP2PID.String())
-		return blameP2PIDs, err
-	default:
-		return nil, errors.New("unknown case")
-	}
+	return sFreq[0][0], freqInt, nil
 }
 
 func (t *TssCommon) GetUnicastBlame(msgType string) ([]BlameNode, error) {

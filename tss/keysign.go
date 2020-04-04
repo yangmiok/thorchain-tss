@@ -37,9 +37,11 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	keySignChannels := keysignInstance.GetTssKeySignChannels()
 	t.p2pCommunication.SetSubscribe(messages.TSSKeySignMsg, msgID, keySignChannels)
 	t.p2pCommunication.SetSubscribe(messages.TSSKeySignVerMsg, msgID, keySignChannels)
+	t.p2pCommunication.SetSubscribe(messages.TSSControlMsg, msgID, keySignChannels)
 
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSKeySignMsg, msgID)
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSKeySignVerMsg, msgID)
+	defer t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, msgID)
 
 	localStateItem, err := t.stateManager.GetLocalState(req.PoolPubKey)
 	if err != nil {

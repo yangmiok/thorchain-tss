@@ -2,7 +2,10 @@ package common
 
 import (
 	"errors"
+	"sync"
 	"time"
+
+	"gitlab.com/thorchain/tss/go-tss/messages"
 )
 
 const (
@@ -13,9 +16,13 @@ const (
 )
 
 var (
-	ErrHashFromOwner = errors.New("hashcheck error from data owner")
-	ErrHashFromPeer  = errors.New("hashcheck error from peer")
-	ErrTssTimeOut    = errors.New("error Tss Timeout")
+	ErrHashFromOwner     = errors.New(" hash sent from data owner")
+	ErrNotEnoughPeer     = errors.New("not enough nodes to evaluate hash")
+	ErrMsgHashCheck      = errors.New("message we received does not match the majority")
+	ErrHashFromPeer      = errors.New("hashcheck error from peer")
+	ErrTssTimeOut        = errors.New("error Tss Timeout")
+	ErrHashCheck         = errors.New("error in processing hash check")
+	ErrHashInconsistency = errors.New("fail to agree on the hash value")
 )
 
 type TssConfig struct {
@@ -25,6 +32,13 @@ type TssConfig struct {
 	KeySignTimeout time.Duration
 	// Pre-parameter define the pre-parameter generations timeout
 	PreParamTimeout time.Duration
+}
+
+type TssMsgStored struct {
+	storedMsg   map[string]*messages.WireMessage
+	requested   map[string]bool
+	storeLocker *sync.Mutex
+	reqLocker   *sync.Mutex
 }
 
 type TssStatus struct {
