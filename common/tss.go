@@ -124,6 +124,11 @@ func (t *TssCommon) GetConf() TssConfig {
 	return t.conf
 }
 
+func (t *TssCommon) getLastUnicastPeers(key string) ([]peer.ID, bool) {
+	ret, ok := t.lastUnicastPeer[key]
+	return ret, ok
+}
+
 func (t *TssCommon) SetPartyInfo(partyInfo *PartyInfo) {
 	t.partyLock.Lock()
 	defer t.partyLock.Unlock()
@@ -314,6 +319,27 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 	return nil
 }
 
+func (t *TssCommon) processBlameVerMsg(broadcastConfirmMsg *messages.BroadcastConfirmMessage) error {
+	t.logger.Debug().Msg("process ver msg blame")
+	defer t.logger.Debug().Msg("finish process ver msg")
+	if nil == broadcastConfirmMsg {
+		return nil
+	}
+	partyInfo := t.getPartyInfo()
+	if nil == partyInfo {
+		return errors.New("can't process ver msg , local party is not ready")
+	}
+	key := broadcastConfirmMsg.Key
+	localCacheItem := t.TryGetLocalCacheItem(key)
+	if nil == localCacheItem {
+		// we didn't receive the TSS Message yet
+		t.logger.Info().Msgf("we(%v) receive the hash that we do not have any message matched with ", t.GetLocalPeerID())
+		return nil
+	}
+	localCacheItem.UpdateConfirmList(broadcastConfirmMsg.P2PID, broadcastConfirmMsg.Hash)
+	return nil
+}
+
 func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirmMessage) error {
 	t.logger.Debug().Msg("process ver msg")
 	defer t.logger.Debug().Msg("finish process ver msg")
@@ -384,6 +410,37 @@ func (t *TssCommon) broadcastHashToPeers(key, msgHash string, peerIDs []peer.ID,
 		return fmt.Errorf("fail to marshal borad cast confirm message: %w", err)
 	}
 	t.logger.Debug().Msg("broadcast VerMsg to all other parties")
+
+	p2pWrappedMSg := messages.WrappedMessage{
+		MessageType: msgType,
+		MsgID:       t.msgID,
+		Payload:     buf,
+	}
+	t.renderToP2P(&messages.BroadcastMsgChan{
+		WrappedMessage: p2pWrappedMSg,
+		PeersID:        peerIDs,
+	})
+
+	return nil
+}
+
+func (t *TssCommon) broadcastHashToPeers(key, msgHash string, peerIDs []peer.ID, msgType messages.THORChainTSSMessageType) error {
+	broadcastConfirmMsg := &messages.BroadcastConfirmMessage{
+		// P2PID will be filled up by the receiver.
+		P2PID: "",
+		Key:   key,
+		Hash:  msgHash,
+	}
+	buf, err := json.Marshal(broadcastConfirmMsg)
+	if err != nil {
+		return fmt.Errorf("fail to marshal borad cast confirm message: %w", err)
+	}
+	t.logger.Debug().Msg("broadcast VerMsg to all other parties")
+
+	if len(peerIDs) == 0 {
+		t.logger.Error().Err(err).Msg("fail to get any peer ID")
+		return errors.New("fail to get any peer ID")
+	}
 
 	p2pWrappedMSg := messages.WrappedMessage{
 		MessageType: msgType,

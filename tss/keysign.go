@@ -30,6 +30,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		t.conf,
 		t.p2pCommunication.BroadcastMsgChan,
 		t.stopChan,
+		&t.Status.CurrKeySign,
 		msgID,
 	)
 

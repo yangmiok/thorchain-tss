@@ -131,6 +131,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 		KeySignTimeout:  60 * time.Second,
 		PreParamTimeout: 5 * time.Second,
 	}
+	var nodeStatus string
 
 	for i := 0; i < s.partyNum; i++ {
 		wg.Add(1)
@@ -141,7 +142,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 			keysignIns := NewTssKeySign(comm.GetLocalPeerID(),
 				conf,
 				comm.BroadcastMsgChan,
-				stopChan, messageID)
+				stopChan, &nodeStatus, messageID)
 			keysignMsgChannel := keysignIns.GetTssKeySignChannels()
 			comm.SetSubscribe(messages.TSSKeySignMsg, messageID, keysignMsgChannel)
 			comm.SetSubscribe(messages.TSSKeySignVerMsg, messageID, keysignMsgChannel)
@@ -168,18 +169,15 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 	}
 }
 
-func observeAndStop(c *C, tssKeySign *TssKeySign, stopChan chan struct{}) {
+func observeAndStop(c *C, tssKeySign *TssKeySign, nodeStatus *string, stopChan chan struct{}) {
 
 	for {
 		select {
 		case <-stopChan:
 			return
 		case <-time.After(time.Millisecond * 10):
-			if tssKeySign.lastMsg == nil {
-				continue
-			}
-			a := tssKeySign.lastMsg.Type()
-			if len(a) > 0 {
+			if len(*nodeStatus) > 0 {
+				a := *nodeStatus
 				index2 := strings.Index(a, "Message")
 				index1 := strings.Index(a, "SignRound")
 				round := a[index1+len("SignRound") : index2]
@@ -209,6 +207,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessageWithStop(c *C) {
 		PreParamTimeout: 5 * time.Second,
 	}
 
+	var nodeStatus string
 	for i := 0; i < s.partyNum; i++ {
 		wg.Add(1)
 		go func(idx int) {
@@ -218,7 +217,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessageWithStop(c *C) {
 			keysignIns := NewTssKeySign(comm.GetLocalPeerID(),
 				conf,
 				comm.BroadcastMsgChan,
-				stopChan, messageID)
+				stopChan, &nodeStatus, messageID)
 			keysignMsgChannel := keysignIns.GetTssKeySignChannels()
 			comm.SetSubscribe(messages.TSSKeySignMsg, messageID, keysignMsgChannel)
 			comm.SetSubscribe(messages.TSSKeySignVerMsg, messageID, keysignMsgChannel)
@@ -227,7 +226,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessageWithStop(c *C) {
 			localState, err := s.stateMgrs[idx].GetLocalState(req.PoolPubKey)
 			c.Assert(err, IsNil)
 			if idx == 1 {
-				go observeAndStop(c, keysignIns, stopChan)
+				go observeAndStop(c, keysignIns, &nodeStatus, stopChan)
 			}
 			_, err = keysignIns.SignMessage([]byte(req.Message), localState, req.SignerPubKeys)
 			c.Assert(err, NotNil)
