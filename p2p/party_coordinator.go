@@ -181,7 +181,6 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 		pc.sendRequestToAll(msg, offline)
 	}()
 	// this is the total time TSS will wait for the party to form
-	timeoutChan := time.After(pc.timeout)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -192,7 +191,7 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 				if peerGroup.getCoordinationStatus() {
 					return
 				}
-			case <-timeoutChan:
+			case <-time.After(pc.timeout):
 				// timeout
 				return
 			}
