@@ -10,6 +10,8 @@ import (
 	"math"
 	"math/big"
 	"os"
+	"sort"
+	"strconv"
 
 	btss "github.com/binance-chain/tss-lib/tss"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -302,6 +304,36 @@ func (t *TssCommon) getHashCheckBlamePeers(localCacheItem *LocalCacheItem, hashC
 	default:
 		return nil, errors.New("unknown case")
 	}
+}
+
+func getHighestFreq(confirmedList map[string]string) (string, int, error) {
+	if len(confirmedList) == 0 {
+		return "", 0, errors.New("empty input")
+	}
+	freq := make(map[string]int, len(confirmedList))
+	hashPeerMap := make(map[string]string, len(confirmedList))
+	for peer, n := range confirmedList {
+		freq[n]++
+		hashPeerMap[n] = peer
+	}
+
+	sFreq := make([][2]string, 0, len(freq))
+	for n, f := range freq {
+		sFreq = append(sFreq, [2]string{n, strconv.FormatInt(int64(f), 10)})
+	}
+	sort.Slice(sFreq, func(i, j int) bool {
+		if sFreq[i][1] > sFreq[j][1] {
+			return true
+		} else {
+			return false
+		}
+	},
+	)
+	freqInt, err := strconv.Atoi(sFreq[0][1])
+	if err != nil {
+		return "", 0, err
+	}
+	return sFreq[0][0], freqInt, nil
 }
 
 func (t *TssCommon) GetUnicastBlame(msgType string) ([]string, error) {

@@ -4,6 +4,7 @@ import (
 	bkg "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/tendermint/tendermint/crypto/secp256k1"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/tss/go-tss/messages"
@@ -24,7 +25,8 @@ func (t *tssHelpSuite) SetUpTest(c *C) {
 
 	broadcast := make(chan *messages.BroadcastMsgChan)
 	conf := TssConfig{}
-	tssCommon := NewTssCommon("123", broadcast, conf, "testID")
+	sk := secp256k1.GenPrivKey()
+	tssCommon := NewTssCommon("123", broadcast, conf, "testID", sk)
 	p1, err := peer.Decode(testPeers[0])
 	c.Assert(err, IsNil)
 	p2, err := peer.Decode(testPeers[1])
@@ -46,6 +48,28 @@ func (t *tssHelpSuite) SetUpTest(c *C) {
 		PartyIDMap: partyIDMap,
 	})
 	t.tssCommon = tssCommon
+
+}
+
+func (t *tssHelpSuite) TestGetHashToBroadcast(c *C) {
+	testMap := make(map[string]string)
+	val, freq := getHighestFreq(testMap)
+	c.Assert(val, Equals, "")
+	c.Assert(freq, Equals, "")
+	val, freq = getHighestFreq(nil)
+	c.Assert(val, Equals, "")
+	c.Assert(freq, Equals, "")
+	testMap["1"] = "aa"
+	testMap["2"] = "aa"
+	testMap["3"] = "aa"
+	testMap["4"] = "ab"
+	testMap["5"] = "bb"
+	testMap["6"] = "bb"
+	testMap["7"] = "bc"
+	testMap["8"] = "cd"
+	val, freq = getHighestFreq(testMap)
+	c.Assert(val, Equals, "aa")
+	c.Assert(freq, Equals, "3")
 
 }
 

@@ -13,9 +13,11 @@ const (
 )
 
 var (
-	ErrHashFromOwner = errors.New("hashcheck error from data owner")
-	ErrHashFromPeer  = errors.New("hashcheck error from peer")
-	ErrTssTimeOut    = errors.New("error Tss Timeout")
+	ErrHashFromOwner     = errors.New("hashcheck error from data owner")
+	ErrHashFromPeer      = errors.New("hashcheck error from peer")
+	ErrTssTimeOut        = errors.New("error Tss Timeout")
+	ErrHashCheck         = errors.New("error in processing hash check")
+	ErrHashInconsistency = errors.New("fail to agree on the hash value")
 )
 
 type TssConfig struct {

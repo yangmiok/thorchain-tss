@@ -250,7 +250,7 @@ func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerI
 	return nil
 }
 
-func (t *TssCommon) hashCheck(localCacheItem *LocalCacheItem) error {
+func (t *TssCommon) hashCheck(localCacheItem *LocalCacheItem, threshold int) error {
 	dataOwner := localCacheItem.Msg.Routing.From
 	dataOwnerP2PID, ok := t.PartyIDtoP2PID[dataOwner.Id]
 	if !ok {
@@ -261,18 +261,34 @@ func (t *TssCommon) hashCheck(localCacheItem *LocalCacheItem) error {
 	defer localCacheItem.lock.Unlock()
 
 	targetHashValue := localCacheItem.Hash
-	for P2PID, hashValue := range localCacheItem.ConfirmedList {
+	hash, freq, err := getHighestFreq(localCacheItem.ConfirmedList)
+	if err != nil {
+		t.logger.Error().Err(err).Msg("fail to get the hash freq")
+		return ErrHashCheck
+	}
+	if freq < threshold {
+		t.logger.Error().Msg("fail to have more than 2/3 peers agree on the received message")
+		return ErrHashInconsistency
+	}
+
+	if targetHashValue == hash {
+		return nil
+	}
+	for P2PID, _ := range localCacheItem.ConfirmedList {
 		if P2PID == dataOwnerP2PID.String() {
 			t.logger.Warn().Msgf("we detect that the data owner try to send the hash for his own message\n")
 			delete(localCacheItem.ConfirmedList, P2PID)
 			return ErrHashFromOwner
 		}
-		if targetHashValue == hashValue {
-			continue
-		}
-		t.logger.Error().Msgf("hash is not in consistency!!")
-		return ErrHashFromPeer
 	}
+
+	if targetHashValue == hash {
+		return nil
+	} else {
+		//fixme, we blame the sender as he give the wrong share
+		return nil
+	}
+
 	return nil
 }
 
@@ -372,7 +388,11 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirm
 			//fixme we need to get the share from the peer.
 
 		} else {
-			errHashCheck := t.hashCheck(localCacheItem)
+			threshold, err := GetThreshold(len(partyInfo.PartyIDMap))
+			if err != nil {
+				return errors.New("fail to calculate the threshold")
+			}
+			errHashCheck := t.hashCheck(localCacheItem, threshold)
 
 			if errHashCheck != nil {
 				blamePeers, err := t.getHashCheckBlamePeers(localCacheItem, errHashCheck)
@@ -489,6 +509,16 @@ func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType message
 	keyBytes := dataOwner.GetKey()
 	var pk secp256k1.PubKeySecp256k1
 	copy(pk[:], keyBytes)
+	out, _ := sdk.Bech32ifyAccPub(pk)
+
+	for id, el := range partyIDMap {
+		var pk secp256k1.PubKeySecp256k1
+		copy(pk[:], el.Key)
+		out, _ := sdk.Bech32ifyAccPub(pk)
+		fmt.Printf("-----%v---->%v\n", id, out)
+	}
+
+	fmt.Printf("---wiredID%v------>%v\n", wireMsg.Routing.From.Id, out)
 
 	ok = pk.VerifyBytes(wireMsg.Message, wireMsg.Sig)
 	if !ok {
