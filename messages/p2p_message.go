@@ -65,6 +65,7 @@ type WireMessage struct {
 	RoundInfo string               `json:"round_info"`
 	Message   []byte               `json:"message"`
 	Sig       []byte               `json:"signature"`
+	Key       []byte               `json:"key"`
 }
 
 // GetCacheKey return the key we used to cache it locally

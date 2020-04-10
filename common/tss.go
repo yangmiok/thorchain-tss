@@ -289,6 +289,7 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		RoundInfo: msg.Type(),
 		Message:   buf,
 		Sig:       sig,
+		Key:       t.privateKey.PubKey().Bytes(),
 	}
 	wireMsgBytes, err := json.Marshal(wireMsg)
 	if err != nil {
@@ -366,35 +367,42 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirm
 
 	localCacheItem.UpdateConfirmList(broadcastConfirmMsg.P2PID, broadcastConfirmMsg.Hash)
 	t.logger.Debug().Msgf("total confirmed parties:%+v", localCacheItem.ConfirmedList)
-	if localCacheItem.TotalConfirmParty() == (len(partyInfo.PartyIDMap)-1) && localCacheItem.Msg != nil {
-		errHashCheck := t.hashCheck(localCacheItem)
+	if localCacheItem.TotalConfirmParty() == len(partyInfo.PartyIDMap)-1 {
+		if localCacheItem.Msg == nil {
+			//fixme we need to get the share from the peer.
 
-		if errHashCheck != nil {
-			blamePeers, err := t.getHashCheckBlamePeers(localCacheItem, errHashCheck)
-			if err != nil {
-				t.logger.Error().Err(err).Msgf("error in get the blame nodes")
-				t.BlamePeers.SetBlame(BlameHashCheck, nil)
-				return fmt.Errorf("error in getting the blame nodes %w", errHashCheck)
-			}
-			blamePubKeys, _, err := t.GetBlamePubKeysLists(blamePeers)
-			if err != nil {
-				t.logger.Error().Err(err).Msg("fail to get the blame nodes public key")
+		} else {
+			errHashCheck := t.hashCheck(localCacheItem)
 
-				t.BlamePeers.SetBlame(BlameHashCheck, nil)
-				return fmt.Errorf("fail to get the blame nodes public key %w", errHashCheck)
+			if errHashCheck != nil {
+				blamePeers, err := t.getHashCheckBlamePeers(localCacheItem, errHashCheck)
+				if err != nil {
+					t.logger.Error().Err(err).Msgf("error in get the blame nodes")
+					t.BlamePeers.SetBlame(BlameHashCheck, nil)
+					return fmt.Errorf("error in getting the blame nodes %w", errHashCheck)
+				}
+				blamePubKeys, _, err := t.GetBlamePubKeysLists(blamePeers)
+				if err != nil {
+					t.logger.Error().Err(err).Msg("fail to get the blame nodes public key")
+
+					t.BlamePeers.SetBlame(BlameHashCheck, nil)
+					return fmt.Errorf("fail to get the blame nodes public key %w", errHashCheck)
+				}
+				t.BlamePeers.SetBlame(BlameHashCheck, blamePubKeys)
+				t.logger.Error().Msg("The consistency check failed")
+				return errHashCheck
 			}
-			t.BlamePeers.SetBlame(BlameHashCheck, blamePubKeys)
-			t.logger.Error().Msg("The consistency check failed")
-			return errHashCheck
+
 		}
-
 		if err := t.updateLocal(localCacheItem.Msg); nil != err {
 			return fmt.Errorf("fail to update the message to local party: %w", err)
 		}
 		// the information had been confirmed by all party , we don't need it anymore
 		t.logger.Debug().Msgf("remove key: %s", key)
 		t.removeKey(key)
+
 	}
+
 	return nil
 }
 
@@ -469,6 +477,23 @@ func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType message
 	if !wireMsg.Routing.IsBroadcast {
 		t.logger.Debug().Msgf("msg from %s to %+v", wireMsg.Routing.From, wireMsg.Routing.To)
 		return t.updateLocal(wireMsg)
+	}
+
+	partyIDMap := t.getPartyInfo().PartyIDMap
+	dataOwner, ok := partyIDMap[wireMsg.Routing.From.Id]
+	if !ok {
+		t.logger.Error().Msg("error in find the data owner")
+		return errors.New("error in find the data owner")
+	}
+
+	keyBytes := dataOwner.GetKey()
+	var pk secp256k1.PubKeySecp256k1
+	copy(pk[:], keyBytes)
+
+	ok = pk.VerifyBytes(wireMsg.Message, wireMsg.Sig)
+	if !ok {
+		t.logger.Error().Msg("fail to verify the signature")
+		return errors.New("signature verification failed")
 	}
 	// broadcast message , we save a copy locally , and then tell all others what we got
 	msgHash, err := BytesToHashString(wireMsg.Message)
