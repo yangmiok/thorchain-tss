@@ -39,6 +39,7 @@ type TssServer struct {
 	partyCoordinator  *p2p.PartyCoordinator
 	stateManager      storage.LocalStateManager
 	signatureNotifier *keysign.SignatureNotifier
+	privateKey        tcrypto.PrivKey
 }
 
 // NewTss create a new instance of Tss
@@ -103,6 +104,7 @@ func NewTss(
 		partyCoordinator:  pc,
 		stateManager:      stateManager,
 		signatureNotifier: sn,
+		privateKey:        priKey,
 	}
 
 	return &tssServer, nil

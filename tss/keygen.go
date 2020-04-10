@@ -54,7 +54,8 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 		t.stopChan,
 		t.preParams,
 		msgID,
-		t.stateManager)
+		t.stateManager,
+		t.privateKey)
 
 	keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 	t.p2pCommunication.SetSubscribe(messages.TSSKeyGenMsg, msgID, keygenMsgChannel)

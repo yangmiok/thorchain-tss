@@ -12,13 +12,14 @@ import (
 	"sync"
 
 	"github.com/binance-chain/go-sdk/common/types"
-	"github.com/binance-chain/tss-lib/crypto"
+	bcrypto "github.com/binance-chain/tss-lib/crypto"
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/btcsuite/btcd/btcec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	tcrypto "github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 
 	"gitlab.com/thorchain/tss/go-tss"
@@ -47,9 +48,10 @@ type TssCommon struct {
 	BlamePeers          Blame
 	msgID               string
 	lastUnicastPeer     map[string][]peer.ID
+	privateKey          tcrypto.PrivKey
 }
 
-func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgChan, conf TssConfig, msgID string) *TssCommon {
+func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgChan, conf TssConfig, msgID string, privateKey tcrypto.PrivKey) *TssCommon {
 	return &TssCommon{
 		conf:                conf,
 		logger:              log.With().Str("module", "tsscommon").Logger(),
@@ -65,6 +67,7 @@ func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgCha
 		BlamePeers:          Blame{},
 		msgID:               msgID,
 		lastUnicastPeer:     make(map[string][]peer.ID),
+		privateKey:          privateKey,
 	}
 }
 
@@ -279,10 +282,13 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 	if err != nil {
 		return fmt.Errorf("fail to get wire bytes: %w", err)
 	}
+	sig, err := t.privateKey.Sign(buf)
+
 	wireMsg := messages.WireMessage{
 		Routing:   r,
 		RoundInfo: msg.Type(),
 		Message:   buf,
+		Sig:       sig,
 	}
 	wireMsgBytes, err := json.Marshal(wireMsg)
 	if err != nil {
@@ -558,7 +564,7 @@ func (t *TssCommon) removeKey(key string) {
 	delete(t.unConfirmedMessages, key)
 }
 
-func GetTssPubKey(pubKeyPoint *crypto.ECPoint) (string, types.AccAddress, error) {
+func GetTssPubKey(pubKeyPoint *bcrypto.ECPoint) (string, types.AccAddress, error) {
 	if pubKeyPoint == nil {
 		return "", types.AccAddress{}, errors.New("invalid points")
 	}
