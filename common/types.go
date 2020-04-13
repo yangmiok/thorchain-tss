@@ -13,7 +13,8 @@ const (
 )
 
 var (
-	ErrHashFromOwner     = errors.New("hashcheck error from data owner")
+	ErrHashFromOwner     = errors.New(" hash sent from data owner")
+	ErrMsgHashCheck      = errors.New("message we received does not match the majority")
 	ErrHashFromPeer      = errors.New("hashcheck error from peer")
 	ErrTssTimeOut        = errors.New("error Tss Timeout")
 	ErrHashCheck         = errors.New("error in processing hash check")

@@ -19,6 +19,8 @@ const (
 	TSSKeyGenVerMsg
 	// TSSKeySignVerMsg is the message we create to make sure every party receive the same broadcast message
 	TSSKeySignVerMsg
+	// TSSMsgBody is the message we create to send/receive share body
+	TSSMsgBody
 	// Unknown is the message indicates the undefined message type
 	Unknown
 )
@@ -52,6 +54,13 @@ type BroadcastMsgChan struct {
 	PeersID        []peer.ID
 }
 
+type RequestMsgBodyMessage struct {
+	ReqHash     string                  `json:"reqest_hash"`
+	ReqKey      string                  `json:"request_key"`
+	RequestType THORChainTSSMessageType `json:"request_type"`
+	Msg         *WireMessage            `json:"message_body"`
+}
+
 // BroadcastConfirmMessage is used to broadcast to all parties what message they receive
 type BroadcastConfirmMessage struct {
 	P2PID string `json:"P2PID"`
@@ -65,7 +74,6 @@ type WireMessage struct {
 	RoundInfo string               `json:"round_info"`
 	Message   []byte               `json:"message"`
 	Sig       []byte               `json:"signature"`
-	Key       []byte               `json:"key"`
 }
 
 // GetCacheKey return the key we used to cache it locally

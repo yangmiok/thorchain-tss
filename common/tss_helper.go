@@ -118,6 +118,17 @@ func InitLog(level string, pretty bool, serviceValue string) {
 	log.Logger = log.Output(out).With().Str("service", serviceValue).Logger()
 }
 
+func partyIDtoPubKey(party *btss.PartyID) (string, error) {
+	partyKeyBytes := party.GetKey()
+	var pk secp256k1.PubKeySecp256k1
+	copy(pk[:], partyKeyBytes)
+	pubKey, err := sdk.Bech32ifyAccPub(pk)
+	if err != nil {
+		return "", err
+	}
+	return pubKey, nil
+}
+
 func AccPubKeysFromPartyIDs(partyIDs []string, partyIDMap map[string]*btss.PartyID) ([]string, error) {
 	pubKeys := make([]string, 0)
 	for _, partyID := range partyIDs {
@@ -125,14 +136,11 @@ func AccPubKeysFromPartyIDs(partyIDs []string, partyIDMap map[string]*btss.Party
 		if !ok {
 			return nil, errors.New("cannot find the blame party")
 		}
-		blamePartyKeyBytes := blameParty.GetKey()
-		var pk secp256k1.PubKeySecp256k1
-		copy(pk[:], blamePartyKeyBytes)
-		blamedPubKey, err := sdk.Bech32ifyAccPub(pk)
+		blamePubKey, err := partyIDtoPubKey(blameParty)
 		if err != nil {
 			return nil, err
 		}
-		pubKeys = append(pubKeys, blamedPubKey)
+		pubKeys = append(pubKeys, blamePubKey)
 	}
 	return pubKeys, nil
 }
@@ -282,29 +290,29 @@ func (t *TssCommon) findBlamePeers(localCacheItem *LocalCacheItem, dataOwnerP2PI
 	return blamePeers, nil
 }
 
-func (t *TssCommon) getHashCheckBlamePeers(localCacheItem *LocalCacheItem, hashCheckErr error) ([]string, error) {
-	// here we do the blame on the error on hash inconsistency
-	// if we find the msg owner try to send the hash to us, we blame him and ignore the blame of the rest
-	// of the other nodes, cause others may also be the victims.
-	var blameP2PIDs []string
-
-	dataOwner := localCacheItem.Msg.Routing.From
-	dataOwnerP2PID, ok := t.PartyIDtoP2PID[dataOwner.Id]
-	if !ok {
-		t.logger.Warn().Msgf("error in find the data Owner P2PID\n")
-		return nil, errors.New("error in find the data Owner P2PID")
-	}
-	switch hashCheckErr {
-	case ErrHashFromOwner:
-		blameP2PIDs = append(blameP2PIDs, dataOwnerP2PID.String())
-		return blameP2PIDs, nil
-	case ErrHashFromPeer:
-		blameP2PIDs, err := t.findBlamePeers(localCacheItem, dataOwnerP2PID.String())
-		return blameP2PIDs, err
-	default:
-		return nil, errors.New("unknown case")
-	}
-}
+//func (t *TssCommon) getHashCheckBlamePeers(localCacheItem *LocalCacheItem, hashCheckErr error) ([]string, error) {
+//	// here we do the blame on the error on hash inconsistency
+//	// if we find the msg owner try to send the hash to us, we blame him and ignore the blame of the rest
+//	// of the other nodes, cause others may also be the victims.
+//	var blameP2PIDs []string
+//
+//	dataOwner := localCacheItem.Msg.Routing.From
+//	dataOwnerP2PID, ok := t.PartyIDtoP2PID[dataOwner.Id]
+//	if !ok {
+//		t.logger.Warn().Msgf("error in find the data Owner P2PID\n")
+//		return nil, errors.New("error in find the data Owner P2PID")
+//	}
+//	switch hashCheckErr {
+//	case ErrHashFromOwner:
+//		blameP2PIDs = append(blameP2PIDs, dataOwnerP2PID.String())
+//		return blameP2PIDs, nil
+//	case ErrHashFromPeer:
+//		blameP2PIDs, err := t.findBlamePeers(localCacheItem, dataOwnerP2PID.String())
+//		return blameP2PIDs, err
+//	default:
+//		return nil, errors.New("unknown case")
+//	}
+//}
 
 func getHighestFreq(confirmedList map[string]string) (string, int, error) {
 	if len(confirmedList) == 0 {
@@ -336,7 +344,7 @@ func getHighestFreq(confirmedList map[string]string) (string, int, error) {
 	return sFreq[0][0], freqInt, nil
 }
 
-func (t *TssCommon) GetUnicastBlame(msgType string) ([]string, error) {
+func (t *TssCommon) GetUnicastBlame(msgType string) ([]BlameNode, error) {
 	peersID, ok := t.lastUnicastPeer[msgType]
 	if !ok {
 		t.logger.Error().Msg("fail to get the blamed peers")
@@ -356,10 +364,19 @@ func (t *TssCommon) GetUnicastBlame(msgType string) ([]string, error) {
 		t.logger.Error().Err(err).Msg("fail to get the blamed peers")
 		return nil, fmt.Errorf("fail to get the blamed peers %w", ErrTssTimeOut)
 	}
-	return blamePeers, nil
+	var blameNodes []BlameNode
+	for _, el := range blamePeers {
+		bn := BlameNode{
+			Pubkey:         el,
+			BlameData:      nil,
+			BlameSignature: nil,
+		}
+		blameNodes = append(blameNodes, bn)
+	}
+	return blameNodes, nil
 }
 
-func (t *TssCommon) GetBroadcastBlame(lastMessageType string) ([]string, error) {
+func (t *TssCommon) GetBroadcastBlame(lastMessageType string) ([]BlameNode, error) {
 
 	localCachedItems := t.TryGetAllLocalCached()
 	blamePeers, err := t.TssTimeoutBlame(localCachedItems, lastMessageType)
@@ -367,5 +384,14 @@ func (t *TssCommon) GetBroadcastBlame(lastMessageType string) ([]string, error) 
 		t.logger.Error().Err(err).Msg("fail to get the blamed peers")
 		return nil, fmt.Errorf("fail to get the blamed peers %w", ErrTssTimeOut)
 	}
-	return blamePeers, nil
+	var blameNodes []BlameNode
+	for _, el := range blamePeers {
+		bn := BlameNode{
+			Pubkey:         el,
+			BlameData:      nil,
+			BlameSignature: nil,
+		}
+		blameNodes = append(blameNodes, bn)
+	}
+	return blameNodes, nil
 }

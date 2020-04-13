@@ -137,21 +137,20 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 			tKeySign.logger.Error().Msgf("fail to sign message with %s", tssConf.KeySignTimeout.String())
 			tssCommonStruct := tKeySign.GetTssCommonStruct()
 			lastMsg := tKeySign.lastMsg
-
-			var blamePeers []string
+			var blameNodes []common.BlameNode
 			var err error
 			if lastMsg.IsBroadcast() == false {
-				blamePeers, err = tssCommonStruct.GetUnicastBlame(lastMsg.Type())
+				blameNodes, err = tssCommonStruct.GetUnicastBlame(lastMsg.Type())
 				if err != nil {
 					tKeySign.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
 			} else {
-				blamePeers, err = tssCommonStruct.GetBroadcastBlame(lastMsg.Type())
+				blameNodes, err = tssCommonStruct.GetBroadcastBlame(lastMsg.Type())
 				if err != nil {
 					tKeySign.logger.Error().Err(err).Msg("error in get broadcast blame")
 				}
 			}
-			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blamePeers)
+			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blameNodes)
 			return nil, common.ErrTssTimeOut
 		case msg := <-outCh:
 			tKeySign.logger.Debug().Msgf(">>>>>>>>>>key sign msg: %s", msg.String())

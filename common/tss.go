@@ -243,11 +243,35 @@ func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerI
 		// we check whether this peer has already send us the VerMsg before update
 		ret := t.checkDupAndUpdateVerMsg(&bMsg, peerID)
 		if ret {
-			return t.processVerMsg(&bMsg)
+			return t.processVerMsg(&bMsg, wrappedMsg.MessageType)
 		}
+	case messages.TSSMsgBody:
+		var wireMsg messages.RequestMsgBodyMessage
+		if err := json.Unmarshal(wrappedMsg.Payload, &wireMsg); nil != err {
+			return fmt.Errorf("fail to unmarshal wire message: %w", err)
+		}
+		if wireMsg.Msg.Message == nil {
+			return nil
+		}
+		fmt.Printf(">>>>>>>>>>>>>>>SAAAAAASSSSSSSSSSSSSSSSS\n")
+		return t.processTSSMsg(wireMsg.Msg, wireMsg.RequestType)
+
 		return nil
 	}
 	return nil
+}
+
+func (t *TssCommon) getMsgHash(localCacheItem *LocalCacheItem, threshold int) (string, error) {
+	hash, freq, err := getHighestFreq(localCacheItem.ConfirmedList)
+	if err != nil {
+		t.logger.Error().Err(err).Msg("fail to get the hash freq")
+		return "", ErrHashCheck
+	}
+	if freq < threshold {
+		t.logger.Error().Msg("fail to have more than 2/3 peers agree on the received message")
+		return "", ErrHashInconsistency
+	}
+	return hash, nil
 }
 
 func (t *TssCommon) hashCheck(localCacheItem *LocalCacheItem, threshold int) error {
@@ -261,19 +285,7 @@ func (t *TssCommon) hashCheck(localCacheItem *LocalCacheItem, threshold int) err
 	defer localCacheItem.lock.Unlock()
 
 	targetHashValue := localCacheItem.Hash
-	hash, freq, err := getHighestFreq(localCacheItem.ConfirmedList)
-	if err != nil {
-		t.logger.Error().Err(err).Msg("fail to get the hash freq")
-		return ErrHashCheck
-	}
-	if freq < threshold {
-		t.logger.Error().Msg("fail to have more than 2/3 peers agree on the received message")
-		return ErrHashInconsistency
-	}
 
-	if targetHashValue == hash {
-		return nil
-	}
 	for P2PID, _ := range localCacheItem.ConfirmedList {
 		if P2PID == dataOwnerP2PID.String() {
 			t.logger.Warn().Msgf("we detect that the data owner try to send the hash for his own message\n")
@@ -281,15 +293,17 @@ func (t *TssCommon) hashCheck(localCacheItem *LocalCacheItem, threshold int) err
 			return ErrHashFromOwner
 		}
 	}
-
+	hash, err := t.getMsgHash(localCacheItem, threshold)
+	if err != nil {
+		return err
+	}
 	if targetHashValue == hash {
-		return nil
-	} else {
-		//fixme, we blame the sender as he give the wrong share
+		t.logger.Debug().Msgf("hash check complete for messageID: %v", t.msgID)
 		return nil
 	}
 
-	return nil
+	return ErrMsgHashCheck
+
 }
 
 func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSSMessageType) error {
@@ -305,7 +319,6 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		RoundInfo: msg.Type(),
 		Message:   buf,
 		Sig:       sig,
-		Key:       t.privateKey.PubKey().Bytes(),
 	}
 	wireMsgBytes, err := json.Marshal(wireMsg)
 	if err != nil {
@@ -319,11 +332,6 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 	peerIDs := make([]peer.ID, 0)
 	if len(r.To) == 0 {
 		peerIDs = t.P2PPeers
-		if len(peerIDs) == 0 {
-			t.logger.Error().Msg("fail to get any peer ids")
-			return errors.New("fail to get any peer id")
-		}
-
 	} else {
 		for _, each := range r.To {
 			peerID, ok := t.PartyIDtoP2PID[each.Id]
@@ -363,7 +371,39 @@ func (t *TssCommon) processBlameVerMsg(broadcastConfirmMsg *messages.BroadcastCo
 	return nil
 }
 
-func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirmMessage) error {
+func (t *TssCommon) processRequestMsgFromPeer(hash, key string, peers []peer.ID, msgType messages.THORChainTSSMessageType, reply bool) error {
+	msg := messages.RequestMsgBodyMessage{
+		ReqHash:     hash,
+		ReqKey:      key,
+		RequestType: msgType,
+		Msg:         nil,
+	}
+	if reply {
+		localCached := t.TryGetLocalCacheItem(key)
+		if localCached.Msg == nil {
+			t.logger.Debug().Msg("we do not have this message either")
+			return nil
+		}
+		msg.Msg = localCached.Msg
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("fail to marshal the request body %w", err)
+	}
+	wrappedMsg := messages.WrappedMessage{
+		MessageType: messages.TSSMsgBody,
+		MsgID:       t.msgID,
+		Payload:     data,
+	}
+
+	t.renderToP2P(&messages.BroadcastMsgChan{
+		WrappedMessage: wrappedMsg,
+		PeersID:        peers,
+	})
+	return nil
+}
+
+func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirmMessage, msgType messages.THORChainTSSMessageType) error {
 	t.logger.Debug().Msg("process ver msg")
 	defer t.logger.Debug().Msg("finish process ver msg")
 	if nil == broadcastConfirmMsg {
@@ -383,34 +423,67 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirm
 
 	localCacheItem.UpdateConfirmList(broadcastConfirmMsg.P2PID, broadcastConfirmMsg.Hash)
 	t.logger.Debug().Msgf("total confirmed parties:%+v", localCacheItem.ConfirmedList)
+
+	threshold, err := GetThreshold(len(partyInfo.PartyIDMap))
 	if localCacheItem.TotalConfirmParty() == len(partyInfo.PartyIDMap)-1 {
 		if localCacheItem.Msg == nil {
-			//fixme we need to get the share from the peer.
-
+			targetHash, err := t.getMsgHash(localCacheItem, threshold)
+			if err != nil {
+				return err
+			}
+			var peersIDs []peer.ID
+			for thisPeerStr, hash := range localCacheItem.ConfirmedList {
+				if hash == targetHash {
+					thisPeer, err := peer.Decode(thisPeerStr)
+					if err != nil {
+						t.logger.Error().Err(err).Msg("fail to convert the p2p id")
+						return err
+					}
+					peersIDs = append(peersIDs, thisPeer)
+				}
+			}
+			switch msgType {
+			case messages.TSSKeyGenVerMsg:
+				return t.processRequestMsgFromPeer(targetHash, key, peersIDs, messages.TSSKeyGenMsg, true)
+			case messages.TSSKeySignVerMsg:
+				return t.processRequestMsgFromPeer(targetHash, key, peersIDs, messages.TSSKeySignMsg, true)
+			default:
+				t.logger.Debug().Msg("unknown message type for request")
+				return nil
+			}
 		} else {
-			threshold, err := GetThreshold(len(partyInfo.PartyIDMap))
 			if err != nil {
 				return errors.New("fail to calculate the threshold")
 			}
-			errHashCheck := t.hashCheck(localCacheItem, threshold)
-
-			if errHashCheck != nil {
-				blamePeers, err := t.getHashCheckBlamePeers(localCacheItem, errHashCheck)
-				if err != nil {
-					t.logger.Error().Err(err).Msgf("error in get the blame nodes")
-					t.BlamePeers.SetBlame(BlameHashCheck, nil)
-					return fmt.Errorf("error in getting the blame nodes %w", errHashCheck)
+			err = t.hashCheck(localCacheItem, threshold)
+			if err != nil {
+				if err == ErrMsgHashCheck {
+					blamePk, err := partyIDtoPubKey(partyInfo.PartyIDMap[localCacheItem.Msg.Routing.From.Id])
+					if err != nil {
+						t.logger.Error().Err(err).Msgf("error in get the blame nodes")
+						t.BlamePeers.SetBlame(BlameHashCheck, nil)
+						return fmt.Errorf("error in getting the blame nodes %w", ErrMsgHashCheck)
+					}
+					blameNode := NewBlameNode(blamePk, localCacheItem.Msg.Message, localCacheItem.Msg.Sig)
+					t.BlamePeers.SetBlame(BlameHashCheck, []BlameNode{blameNode})
+					return ErrMsgHashCheck
 				}
-				blamePubKeys, _, err := t.GetBlamePubKeysLists(blamePeers)
-				if err != nil {
-					t.logger.Error().Err(err).Msg("fail to get the blame nodes public key")
-
-					t.BlamePeers.SetBlame(BlameHashCheck, nil)
-					return fmt.Errorf("fail to get the blame nodes public key %w", errHashCheck)
-				}
-				t.BlamePeers.SetBlame(BlameHashCheck, blamePubKeys)
-				t.logger.Error().Msg("The consistency check failed")
-				return errHashCheck
+				//blamePeers, err := t.getHashCheckBlamePeers(localCacheItem, errHashCheck)
+				//if err != nil {
+				//	t.logger.Error().Err(err).Msgf("error in get the blame nodes")
+				//	t.BlamePeers.SetBlame(BlameHashCheck, nil)
+				//	return fmt.Errorf("error in getting the blame nodes %w", errHashCheck)
+				//}
+				//blamePubKeys, _, err := t.GetBlamePubKeysLists(blamePeers)
+				//if err != nil {
+				//	t.logger.Error().Err(err).Msg("fail to get the blame nodes public key")
+				//
+				//	t.BlamePeers.SetBlame(BlameHashCheck, nil)
+				//	return fmt.Errorf("fail to get the blame nodes public key %w", errHashCheck)
+				//}
+				//t.BlamePeers.SetBlame(BlameHashCheck, blamePubKeys)
+				//t.logger.Error().Msg("The consistency check failed")
+				return ErrMsgHashCheck
 			}
 
 		}

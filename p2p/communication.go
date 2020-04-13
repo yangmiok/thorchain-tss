@@ -87,6 +87,9 @@ func (c *Communication) GetLocalPeerID() string {
 
 // Broadcast message to Peers
 func (c *Communication) Broadcast(peers []peer.ID, msg []byte) {
+	if len(peers) == 0 {
+		return
+	}
 	// try to discover all peers and then broadcast the messages
 	c.wg.Add(1)
 	go c.broadcastToPeers(peers, msg)
@@ -97,7 +100,6 @@ func (c *Communication) broadcastToPeers(peers []peer.ID, msg []byte) {
 	defer func() {
 		c.logger.Debug().Msgf("finished sending message to peer(%v)", peers)
 	}()
-
 	for _, p := range peers {
 		if err := c.writeToStream(p, msg); nil != err {
 			c.logger.Error().Err(err).Msg("fail to write to stream")
