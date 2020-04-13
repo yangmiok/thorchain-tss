@@ -49,6 +49,7 @@ type TssCommon struct {
 	msgID               string
 	lastUnicastPeer     map[string][]peer.ID
 	privateKey          tcrypto.PrivKey
+	msgStored           TssMsgStored
 }
 
 func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgChan, conf TssConfig, msgID string, privateKey tcrypto.PrivKey) *TssCommon {
@@ -68,6 +69,7 @@ func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgCha
 		msgID:               msgID,
 		lastUnicastPeer:     make(map[string][]peer.ID),
 		privateKey:          privateKey,
+		msgStored:           NewTssMsgStored(),
 	}
 }
 
@@ -221,7 +223,7 @@ func (t *TssCommon) checkDupAndUpdateVerMsg(bMsg *messages.BroadcastConfirmMessa
 	return true
 }
 
-func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerID string) error {
+func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerIDStr string) error {
 	t.logger.Debug().Msg("start process one message")
 	defer t.logger.Debug().Msg("finish processing one message")
 	if nil == wrappedMsg {
@@ -241,7 +243,7 @@ func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerI
 			return errors.New("fail to unmarshal broadcast confirm message")
 		}
 		// we check whether this peer has already send us the VerMsg before update
-		ret := t.checkDupAndUpdateVerMsg(&bMsg, peerID)
+		ret := t.checkDupAndUpdateVerMsg(&bMsg, peerIDStr)
 		if ret {
 			return t.processVerMsg(&bMsg, wrappedMsg.MessageType)
 		}
@@ -250,8 +252,13 @@ func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerI
 		if err := json.Unmarshal(wrappedMsg.Payload, &wireMsg); nil != err {
 			return fmt.Errorf("fail to unmarshal wire message: %w", err)
 		}
-		if wireMsg.Msg.Message == nil {
-			return nil
+		if wireMsg.Msg == nil {
+			peerID, err := peer.Decode(peerIDStr)
+			if err != nil {
+				t.logger.Error().Err(err).Msg("error in decode the peer")
+				return err
+			}
+			return t.processRequestMsgFromPeer([]peer.ID{peerID}, &wireMsg, false)
 		}
 		fmt.Printf(">>>>>>>>>>>>>>>SAAAAAASSSSSSSSSSSSSSSSS\n")
 		return t.processTSSMsg(wireMsg.Msg, wireMsg.RequestType)
@@ -371,21 +378,18 @@ func (t *TssCommon) processBlameVerMsg(broadcastConfirmMsg *messages.BroadcastCo
 	return nil
 }
 
-func (t *TssCommon) processRequestMsgFromPeer(hash, key string, peers []peer.ID, msgType messages.THORChainTSSMessageType, reply bool) error {
-	msg := messages.RequestMsgBodyMessage{
-		ReqHash:     hash,
-		ReqKey:      key,
-		RequestType: msgType,
-		Msg:         nil,
-	}
-	if reply {
-		localCached := t.TryGetLocalCacheItem(key)
-		if localCached.Msg == nil {
+func (t *TssCommon) processRequestMsgFromPeer(peersID []peer.ID, msg *messages.RequestMsgBodyMessage, requester bool) error {
+	// we need to send msg to the peer
+	if !requester {
+		reqKey := msg.ReqKey
+		storedMsg := t.msgStored.getTssMsg(reqKey)
+		if msg == nil {
 			t.logger.Debug().Msg("we do not have this message either")
 			return nil
 		}
-		msg.Msg = localCached.Msg
+		msg.Msg = storedMsg
 	}
+
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("fail to marshal the request body %w", err)
@@ -398,7 +402,7 @@ func (t *TssCommon) processRequestMsgFromPeer(hash, key string, peers []peer.ID,
 
 	t.renderToP2P(&messages.BroadcastMsgChan{
 		WrappedMessage: wrappedMsg,
-		PeersID:        peers,
+		PeersID:        peersID,
 	})
 	return nil
 }
@@ -425,8 +429,9 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirm
 	t.logger.Debug().Msgf("total confirmed parties:%+v", localCacheItem.ConfirmedList)
 
 	threshold, err := GetThreshold(len(partyInfo.PartyIDMap))
-	if localCacheItem.TotalConfirmParty() == len(partyInfo.PartyIDMap)-1 {
+	if localCacheItem.TotalConfirmParty() == len(partyInfo.PartyIDMap)-2 {
 		if localCacheItem.Msg == nil {
+			fmt.Printf("TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT\n")
 			targetHash, err := t.getMsgHash(localCacheItem, threshold)
 			if err != nil {
 				return err
@@ -442,11 +447,21 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirm
 					peersIDs = append(peersIDs, thisPeer)
 				}
 			}
+
+			msg := &messages.RequestMsgBodyMessage{
+				ReqHash:     targetHash,
+				ReqKey:      key,
+				RequestType: 0,
+				Msg:         nil,
+			}
+
 			switch msgType {
 			case messages.TSSKeyGenVerMsg:
-				return t.processRequestMsgFromPeer(targetHash, key, peersIDs, messages.TSSKeyGenMsg, true)
+				msg.RequestType = messages.TSSKeyGenMsg
+				return t.processRequestMsgFromPeer(peersIDs, msg, true)
 			case messages.TSSKeySignVerMsg:
-				return t.processRequestMsgFromPeer(targetHash, key, peersIDs, messages.TSSKeySignMsg, true)
+				msg.RequestType = messages.TSSKeySignMsg
+				return t.processRequestMsgFromPeer(peersIDs, msg, true)
 			default:
 				t.logger.Debug().Msg("unknown message type for request")
 				return nil
@@ -490,6 +505,7 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirm
 		if err := t.updateLocal(localCacheItem.Msg); nil != err {
 			return fmt.Errorf("fail to update the message to local party: %w", err)
 		}
+		t.msgStored.storeTssMsg(key, localCacheItem.Msg)
 		// the information had been confirmed by all party , we don't need it anymore
 		t.logger.Debug().Msgf("remove key: %s", key)
 		t.removeKey(key)
@@ -582,16 +598,14 @@ func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType message
 	keyBytes := dataOwner.GetKey()
 	var pk secp256k1.PubKeySecp256k1
 	copy(pk[:], keyBytes)
-	out, _ := sdk.Bech32ifyAccPub(pk)
+	//out, _ := sdk.Bech32ifyAccPub(pk)
 
-	for id, el := range partyIDMap {
-		var pk secp256k1.PubKeySecp256k1
-		copy(pk[:], el.Key)
-		out, _ := sdk.Bech32ifyAccPub(pk)
-		fmt.Printf("-----%v---->%v\n", id, out)
-	}
-
-	fmt.Printf("---wiredID%v------>%v\n", wireMsg.Routing.From.Id, out)
+	//for id, el := range partyIDMap {
+	//	var pk secp256k1.PubKeySecp256k1
+	//	copy(pk[:], el.Key)
+	//	out, _ := sdk.Bech32ifyAccPub(pk)
+	//	fmt.Printf("-----%v---->%v\n", id, out)
+	//}
 
 	ok = pk.VerifyBytes(wireMsg.Message, wireMsg.Sig)
 	if !ok {
@@ -626,6 +640,7 @@ func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType message
 			return fmt.Errorf("fail to update the message to local party: %w", err)
 		}
 		t.logger.Debug().Msgf("remove key: %s", key)
+		t.msgStored.storeTssMsg(key, localCacheItem.Msg)
 		t.removeKey(key)
 	}
 	var peerIDs []peer.ID

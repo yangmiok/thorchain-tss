@@ -2,6 +2,8 @@ package common
 
 import (
 	"errors"
+	"gitlab.com/thorchain/tss/go-tss/messages"
+	"sync"
 	"time"
 )
 
@@ -28,6 +30,11 @@ type TssConfig struct {
 	KeySignTimeout time.Duration
 	// Pre-parameter define the pre-parameter generations timeout
 	PreParamTimeout time.Duration
+}
+
+type TssMsgStored struct {
+	storedMsg map[string]*messages.WireMessage
+	locker    *sync.Mutex
 }
 
 type TssStatus struct {
