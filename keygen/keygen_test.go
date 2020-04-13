@@ -15,6 +15,9 @@ import (
 	"time"
 
 	"github.com/binance-chain/tss-lib/crypto"
+	tcrypto "github.com/tendermint/tendermint/crypto"
+	"github.com/tendermint/tendermint/crypto/secp256k1"
+
 	btsskeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	maddr "github.com/multiformats/go-multiaddr"
 	. "gopkg.in/check.v1"
@@ -38,15 +41,23 @@ var (
 		"JFB2LIJZtK+KasK00NcNil4PRJS4c4liOnK0nDalhqc=",
 		"vLMGhVXMOXQVnAE3BUU8fwNj/q0ZbndKkwmxfS5EN9Y=",
 	}
+
+	testNodePrivkey = []string{
+		"ZThiMDAxOTk2MDc4ODk3YWE0YThlMjdkMWY0NjA1MTAwZDgyNDkyYzdhNmMwZWQ3MDBhMWIyMjNmNGMzYjVhYg==",
+		"ZTc2ZjI5OTIwOGVlMDk2N2M3Yzc1MjYyODQ0OGUyMjE3NGJiOGRmNGQyZmVmODg0NzQwNmUzYTk1YmQyODlmNA==",
+		"MjQ1MDc2MmM4MjU5YjRhZjhhNmFjMmI0ZDBkNzBkOGE1ZTBmNDQ5NGI4NzM4OTYyM2E3MmI0OWMzNmE1ODZhNw==",
+		"YmNiMzA2ODU1NWNjMzk3NDE1OWMwMTM3MDU0NTNjN2YwMzYzZmVhZDE5NmU3NzRhOTMwOWIxN2QyZTQ0MzdkNg==",
+	}
 )
 
 func TestPackage(t *testing.T) { TestingT(t) }
 
 type TssKeygenTestSuite struct {
-	comms     []*p2p.Communication
-	preParams []*btsskeygen.LocalPreParams
-	partyNum  int
-	stateMgrs []storage.LocalStateManager
+	comms        []*p2p.Communication
+	preParams    []*btsskeygen.LocalPreParams
+	partyNum     int
+	stateMgrs    []storage.LocalStateManager
+	nodePrivKeys []tcrypto.PrivKey
 }
 
 var _ = Suite(&TssKeygenTestSuite{})
@@ -54,6 +65,16 @@ var _ = Suite(&TssKeygenTestSuite{})
 func (s *TssKeygenTestSuite) SetUpSuite(c *C) {
 	common.InitLog("info", true, "keygen_test")
 	common.SetupBech32Prefix()
+	for _, el := range testNodePrivkey {
+		priHexBytes, err := base64.StdEncoding.DecodeString(el)
+		c.Assert(err, IsNil)
+		rawBytes, err := hex.DecodeString(string(priHexBytes))
+		c.Assert(err, IsNil)
+		var keyBytesArray [32]byte
+		copy(keyBytesArray[:], rawBytes[:32])
+		priKey := secp256k1.PrivKeySecp256k1(keyBytesArray)
+		s.nodePrivKeys = append(s.nodePrivKeys, priKey)
+	}
 }
 
 // SetUpTest set up environment for test key gen
@@ -148,7 +169,7 @@ func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 				stopChan,
 				s.preParams[idx],
 				messageID,
-				s.stateMgrs[idx])
+				s.stateMgrs[idx], s.nodePrivKeys[idx])
 			c.Assert(keygenInstance, NotNil)
 			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
@@ -165,18 +186,38 @@ func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 	wg.Wait()
 }
 
+func getBlameNode(c *C, blames []string) string {
+	if len(blames) == 0 {
+		return ""
+	}
+	blameFreq := make(map[string]int, len(blames))
+	for _, peer := range blames {
+		blameFreq[peer]++
+	}
+	var blameNode string = ""
+	var highestBlame int = 0
+	for peer, freq := range blameFreq {
+		if freq > highestBlame {
+			highestBlame = freq
+			blameNode = peer
+		}
+	}
+	return blameNode
+}
+
 func (s *TssKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 	sort.Strings(testPubKeys)
 	req := NewRequest(testPubKeys)
 	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
 	c.Assert(err, IsNil)
 	conf := common.TssConfig{
-		KeyGenTimeout:   10 * time.Second,
-		KeySignTimeout:  10 * time.Second,
+		KeyGenTimeout:   5 * time.Second,
+		KeySignTimeout:  5 * time.Second,
 		PreParamTimeout: 5 * time.Second,
 	}
 	wg := sync.WaitGroup{}
-
+	var allblames []string
+	blameAppendLocker := &sync.Mutex{}
 	for i := 0; i < s.partyNum; i++ {
 		wg.Add(1)
 		go func(idx int) {
@@ -192,41 +233,103 @@ func (s *TssKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 				stopChan,
 				s.preParams[idx],
 				messageID,
-				s.stateMgrs[idx])
+				s.stateMgrs[idx],
+				s.nodePrivKeys[idx])
 			c.Assert(keygenInstance, NotNil)
 			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
 			comm.SetSubscribe(messages.TSSKeyGenVerMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSMsgBody, messageID, keygenMsgChannel)
 			defer comm.CancelSubscribe(messages.TSSKeyGenMsg, messageID)
 			defer comm.CancelSubscribe(messages.TSSKeyGenVerMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSMsgBody, messageID)
 
 			if idx == 1 {
 				go func() {
-					time.Sleep(time.Millisecond * 200)
+					time.Sleep(time.Millisecond * 10)
 					close(keygenInstance.stopChan)
 				}()
 
 			}
 			_, err := keygenInstance.GenerateNewKey(req)
 			c.Assert(err, NotNil)
-			// we skip the node 1 as we force it to stop
-			if idx != 1 {
-				blames := keygenInstance.GetTssCommonStruct().BlamePeers.BlameNodes
-				c.Assert(blames, HasLen, 1)
-				c.Assert(blames[0], Equals, testPubKeys[1])
+			blames := keygenInstance.GetTssCommonStruct().BlamePeers.BlameNodes
+			blameAppendLocker.Lock()
+			for _, el := range blames {
+				allblames = append(allblames, el.Pubkey)
 			}
+			blameAppendLocker.Unlock()
+
 		}(i)
 	}
 	wg.Wait()
 }
 
-func (s *TssKeygenTestSuite) TestSignMessage(c *C) {
+func (s *TssKeygenTestSuite) TestGenerateNewKeyRejectSendToOnePeer(c *C) {
+	sort.Strings(testPubKeys)
+	req := NewRequest(testPubKeys)
+	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
+	c.Assert(err, IsNil)
+	conf := common.TssConfig{
+		KeyGenTimeout:   5 * time.Second,
+		KeySignTimeout:  5 * time.Second,
+		PreParamTimeout: 5 * time.Second,
+	}
+	wg := sync.WaitGroup{}
+	for i := 0; i < s.partyNum; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			comm := s.comms[idx]
+			stopChan := make(chan struct{})
+			localPubKey := testPubKeys[idx]
+			keygenInstance := NewTssKeyGen(
+				comm.GetLocalPeerID(),
+				conf,
+				localPubKey,
+				comm.BroadcastMsgChan,
+				stopChan,
+				s.preParams[idx],
+				messageID,
+				s.stateMgrs[idx],
+				s.nodePrivKeys[idx])
+			c.Assert(keygenInstance, NotNil)
+			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
+			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSKeyGenVerMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSMsgBody, messageID, keygenMsgChannel)
+			defer comm.CancelSubscribe(messages.TSSKeyGenMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSKeyGenVerMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSMsgBody, messageID)
+
+			if idx == 1 {
+				go func() {
+					time.Sleep(time.Millisecond * 20)
+					peersID := keygenInstance.tssCommonStruct.P2PPeers
+					sort.Slice(peersID, func(i, j int) bool {
+						return peersID[i].String() > peersID[j].String()
+					})
+					peersID[0] = peersID[len(peersID)-1]
+					peersID[len(peersID)-1] = ""
+					peersID = peersID[:len(peersID)-1]
+					keygenInstance.tssCommonStruct.P2PPeers = peersID
+				}()
+
+			}
+			_, err := keygenInstance.GenerateNewKey(req)
+			c.Assert(err, IsNil)
+		}(i)
+	}
+	wg.Wait()
+}
+
+func (s *TssKeygenTestSuite) TestKeyGenWithError(c *C) {
 	req := Request{
 		Keys: testPubKeys[:],
 	}
 	conf := common.TssConfig{}
 	stateManager := &storage.MockLocalStateManager{}
-	keyGenInstance := NewTssKeyGen("", conf, "", nil, nil, nil, "test", stateManager)
+	keyGenInstance := NewTssKeyGen("", conf, "", nil, nil, nil, "test", stateManager, s.nodePrivKeys[0])
 	generatedKey, err := keyGenInstance.GenerateNewKey(req)
 	c.Assert(err, NotNil)
 	c.Assert(generatedKey, IsNil)

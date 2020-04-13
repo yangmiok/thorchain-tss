@@ -33,8 +33,10 @@ type TssConfig struct {
 }
 
 type TssMsgStored struct {
-	storedMsg map[string]*messages.WireMessage
-	locker    *sync.Mutex
+	storedMsg   map[string]*messages.WireMessage
+	requested   map[string]bool
+	storeLocker *sync.Mutex
+	reqLocker   *sync.Mutex
 }
 
 type TssStatus struct {

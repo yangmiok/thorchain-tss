@@ -140,21 +140,21 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			tssCommonStruct := tKeyGen.GetTssCommonStruct()
 
 			lastMsg := tKeyGen.lastMsg
-			var blamePeers []string
+			var blameNodes []common.BlameNode
 			var err error
 			if lastMsg.IsBroadcast() == false {
-				blamePeers, err = tssCommonStruct.GetUnicastBlame(lastMsg.Type())
+				blameNodes, err = tssCommonStruct.GetUnicastBlame(lastMsg.Type())
 				if err != nil {
 					tKeyGen.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
 			} else {
-				blamePeers, err = tssCommonStruct.GetBroadcastBlame(lastMsg.Type())
+				blameNodes, err = tssCommonStruct.GetBroadcastBlame(lastMsg.Type())
 				if err != nil {
 					tKeyGen.logger.Error().Err(err).Msg("error in get broadcast blame")
 				}
 			}
 
-			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blamePeers)
+			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blameNodes)
 			return nil, common.ErrTssTimeOut
 
 		case msg := <-outCh:

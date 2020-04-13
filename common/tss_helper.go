@@ -15,11 +15,14 @@ import (
 
 	btss "github.com/binance-chain/tss-lib/tss"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	mapset "github.com/deckarep/golang-set"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/btcd/btcec"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
+
+	"gitlab.com/thorchain/tss/go-tss/messages"
 )
 
 func Contains(s []*btss.PartyID, e *btss.PartyID) bool {
@@ -211,108 +214,54 @@ func (t *TssCommon) GetBlamePubKeysLists(peer []string) ([]string, []string, err
 	return inList, notInlist, err
 }
 
-// TssTimeoutBlame handles the blame caused by the nodesync error
-// We believe the node itself will not cheat himself, so we go through
-// the confirmed list to find out the absent node(s) that fail to send the
-// hash of the message. The node who receive the broadcast message must send
-// the VerMsg otherwise, we blame them
-func (t *TssCommon) TssTimeoutBlame(localCachedItems []*LocalCacheItem, lastMessageType string) ([]string, error) {
-	var sumStandbyPeers []string
-	for _, el := range localCachedItems {
-		if el.Msg == nil {
-			continue
-		}
-		// we only process the last message, cause we stopped by the last message, if we still process
-		// the previous localCachedItem, it must be send from the malicious node.
-		if el.Msg.RoundInfo == lastMessageType {
-			if len(t.P2PPeers) == el.TotalConfirmParty() {
-				return nil, nil
-			}
-			sumStandbyPeers = append(sumStandbyPeers, el.GetPeers()...)
+// this blame blames the node who provide the wrong share
+func (t *TssCommon) TssWrongShareBlame(wiredMsg *messages.WireMessage) string {
+	shareOwner := wiredMsg.Routing.From
+	owner, ok := t.getPartyInfo().PartyIDMap[shareOwner.Id]
+	if !ok {
+		t.logger.Error().Msg("cannot find the blame node public key")
+		return ""
+	}
+	pk, err := partyIDtoPubKey(owner)
+	if err != nil {
+		return ""
+	}
+	return pk
+}
+
+// for the last round, we first check whether the stored share which means it get the majority of the peers to accept
+// this share. We then, find the missing one to blame, if he is honest he must get 2/3 peers accept his share(given the
+// condition that 2/3 of the peers are honest)
+func (t *TssCommon) TssTimeoutBlame(lastMessageType string) ([]string, error) {
+
+	peersSet := mapset.NewSet()
+	standbySet := mapset.NewSet()
+	for _, el := range t.partyInfo.PartyIDMap {
+		if el.Id != t.partyInfo.Party.PartyID().Id {
+			peersSet.Add(el.Id)
 		}
 	}
-	_, blamePubKeys, err := t.GetBlamePubKeysLists(sumStandbyPeers)
+
+	for _, el := range t.msgStored.storedMsg {
+		if el.RoundInfo == lastMessageType {
+			standbySet.Add(el.Routing.From.Id)
+		}
+	}
+
+	var blames []string
+	diff := peersSet.Difference(standbySet).ToSlice()
+	for _, el := range diff {
+		blames = append(blames, el.(string))
+	}
+
+	blamePubKeys, err := AccPubKeysFromPartyIDs(blames, t.partyInfo.PartyIDMap)
 	if err != nil {
-		t.logger.Error().Err(err).Msg("error in get blame parties pubkey")
+		t.logger.Error().Err(err).Msg("fail to get the public keys of the blame node")
 		return nil, err
 	}
 
 	return blamePubKeys, nil
 }
-
-func (t *TssCommon) findBlamePeers(localCacheItem *LocalCacheItem, dataOwnerP2PID string) ([]string, error) {
-	// our tss is based on the assumption that 2/3 of the nodes are honest. we define the majority as 2/3 node,
-	// Then we have the following scenarios:
-	// if our hash is the same with the majority, we blame the minority and the msg owner.
-	// if our hash is the same with the one of the minorities, we blame the msg owner.
-	blamePeers := make([]string, 0)
-	hashToPeers := make(map[string][]string)
-	ourHash := localCacheItem.Hash
-	localCacheItem.lock.Lock()
-	defer localCacheItem.lock.Unlock()
-	for P2PID, hashValue := range localCacheItem.ConfirmedList {
-		if peers, ok := hashToPeers[hashValue]; ok {
-			peers = append(peers, P2PID)
-			hashToPeers[hashValue] = peers
-		} else {
-			hashToPeers[hashValue] = []string{P2PID}
-		}
-	}
-
-	threshold, err := GetThreshold(len(t.partyInfo.PartyIDMap))
-	if err != nil {
-		return nil, err
-	}
-	members := hashToPeers[ourHash]
-	if len(members) < threshold {
-		for key, peers := range hashToPeers {
-			if key == ourHash {
-				continue
-			}
-			// we blame all the rest of the minorities
-			if len(peers) < threshold {
-				blamePeers = append(blamePeers, peers...)
-			}
-		}
-		// lastly, we add the data owner
-		blamePeers = append(blamePeers, dataOwnerP2PID)
-		return blamePeers, nil
-	}
-
-	for key, peers := range hashToPeers {
-		if key == ourHash {
-			continue
-		}
-		blamePeers = append(blamePeers, peers...)
-	}
-	// lastly, we add the data owner
-	blamePeers = append(blamePeers, dataOwnerP2PID)
-	return blamePeers, nil
-}
-
-//func (t *TssCommon) getHashCheckBlamePeers(localCacheItem *LocalCacheItem, hashCheckErr error) ([]string, error) {
-//	// here we do the blame on the error on hash inconsistency
-//	// if we find the msg owner try to send the hash to us, we blame him and ignore the blame of the rest
-//	// of the other nodes, cause others may also be the victims.
-//	var blameP2PIDs []string
-//
-//	dataOwner := localCacheItem.Msg.Routing.From
-//	dataOwnerP2PID, ok := t.PartyIDtoP2PID[dataOwner.Id]
-//	if !ok {
-//		t.logger.Warn().Msgf("error in find the data Owner P2PID\n")
-//		return nil, errors.New("error in find the data Owner P2PID")
-//	}
-//	switch hashCheckErr {
-//	case ErrHashFromOwner:
-//		blameP2PIDs = append(blameP2PIDs, dataOwnerP2PID.String())
-//		return blameP2PIDs, nil
-//	case ErrHashFromPeer:
-//		blameP2PIDs, err := t.findBlamePeers(localCacheItem, dataOwnerP2PID.String())
-//		return blameP2PIDs, err
-//	default:
-//		return nil, errors.New("unknown case")
-//	}
-//}
 
 func getHighestFreq(confirmedList map[string]string) (string, int, error) {
 	if len(confirmedList) == 0 {
@@ -378,19 +327,14 @@ func (t *TssCommon) GetUnicastBlame(msgType string) ([]BlameNode, error) {
 
 func (t *TssCommon) GetBroadcastBlame(lastMessageType string) ([]BlameNode, error) {
 
-	localCachedItems := t.TryGetAllLocalCached()
-	blamePeers, err := t.TssTimeoutBlame(localCachedItems, lastMessageType)
+	blamePeers, err := t.TssTimeoutBlame(lastMessageType)
 	if err != nil {
 		t.logger.Error().Err(err).Msg("fail to get the blamed peers")
 		return nil, fmt.Errorf("fail to get the blamed peers %w", ErrTssTimeOut)
 	}
 	var blameNodes []BlameNode
 	for _, el := range blamePeers {
-		bn := BlameNode{
-			Pubkey:         el,
-			BlameData:      nil,
-			BlameSignature: nil,
-		}
+		bn := NewBlameNode(el, nil, nil)
 		blameNodes = append(blameNodes, bn)
 	}
 	return blameNodes, nil

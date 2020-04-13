@@ -61,7 +61,6 @@ func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgCha
 		PartyIDtoP2PID:      make(map[string]peer.ID),
 		unConfirmedMsgLock:  &sync.Mutex{},
 		unConfirmedMessages: make(map[string]*LocalCacheItem),
-		localPeerID:         peerID,
 		broadcastChannel:    broadcastChannel,
 		TssMsg:              make(chan *p2p.Message),
 		P2PPeers:            nil,
@@ -146,6 +145,11 @@ func (t *TssCommon) getPartyInfo() *PartyInfo {
 	return t.partyInfo
 }
 
+// it is only used for debuging
+func (t *TssCommon) QueryRequestMsgLenDebug() int {
+	return len(t.msgStored.requested)
+}
+
 func (t *TssCommon) GetLocalPeerID() string {
 	return t.localPeerID
 }
@@ -193,6 +197,9 @@ func (t *TssCommon) updateLocal(wireMsg *messages.WireMessage) error {
 	}
 
 	if _, err := partyInfo.Party.UpdateFromBytes(wireMsg.Message, partyID, wireMsg.Routing.IsBroadcast); nil != err {
+		pk := t.TssWrongShareBlame(wireMsg)
+		blameNode := NewBlameNode(pk, wireMsg.Message, wireMsg.Sig)
+		t.BlamePeers.SetBlame(BlameHashCheck, []BlameNode{blameNode})
 		return fmt.Errorf("fail to set bytes to local party: %w", err)
 	}
 	return nil
@@ -260,10 +267,13 @@ func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerI
 			}
 			return t.processRequestMsgFromPeer([]peer.ID{peerID}, &wireMsg, false)
 		}
-		fmt.Printf(">>>>>>>>>>>>>>>SAAAAAASSSSSSSSSSSSSSSSS\n")
+		exist := t.msgStored.queryAndDelete(wireMsg.ReqHash)
+		if !exist {
+			t.logger.Debug().Msg("this request does not exit, maybe already processed")
+			return nil
+		}
 		return t.processTSSMsg(wireMsg.Msg, wireMsg.RequestType)
 
-		return nil
 	}
 	return nil
 }
@@ -275,7 +285,7 @@ func (t *TssCommon) getMsgHash(localCacheItem *LocalCacheItem, threshold int) (s
 		return "", ErrHashCheck
 	}
 	if freq < threshold {
-		t.logger.Error().Msg("fail to have more than 2/3 peers agree on the received message")
+		t.logger.Error().Msgf("fail to have more than 2/3 peers agree on the received message threshold(%d)--total confirmed(%d)\n", threshold, freq)
 		return "", ErrHashInconsistency
 	}
 	return hash, nil
@@ -382,7 +392,7 @@ func (t *TssCommon) processRequestMsgFromPeer(peersID []peer.ID, msg *messages.R
 	// we need to send msg to the peer
 	if !requester {
 		reqKey := msg.ReqKey
-		storedMsg := t.msgStored.getTssMsg(reqKey)
+		storedMsg := t.msgStored.getTssMsgStored(reqKey)
 		if msg == nil {
 			t.logger.Debug().Msg("we do not have this message either")
 			return nil
@@ -429,87 +439,70 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirm
 	t.logger.Debug().Msgf("total confirmed parties:%+v", localCacheItem.ConfirmedList)
 
 	threshold, err := GetThreshold(len(partyInfo.PartyIDMap))
-	if localCacheItem.TotalConfirmParty() == len(partyInfo.PartyIDMap)-2 {
-		if localCacheItem.Msg == nil {
-			fmt.Printf("TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT\n")
-			targetHash, err := t.getMsgHash(localCacheItem, threshold)
-			if err != nil {
-				return err
-			}
-			var peersIDs []peer.ID
-			for thisPeerStr, hash := range localCacheItem.ConfirmedList {
-				if hash == targetHash {
-					thisPeer, err := peer.Decode(thisPeerStr)
-					if err != nil {
-						t.logger.Error().Err(err).Msg("fail to convert the p2p id")
-						return err
-					}
-					peersIDs = append(peersIDs, thisPeer)
+	if err != nil {
+		return err
+	}
+	if localCacheItem.Msg == nil {
+		// in acquiring the message, we do not need to have the threshold check
+		targetHash, err := t.getMsgHash(localCacheItem, 0)
+		if err != nil {
+			return err
+		}
+		var peersIDs []peer.ID
+		for thisPeerStr, hash := range localCacheItem.ConfirmedList {
+			if hash == targetHash {
+				thisPeer, err := peer.Decode(thisPeerStr)
+				if err != nil {
+					t.logger.Error().Err(err).Msg("fail to convert the p2p id")
+					return err
 				}
+				peersIDs = append(peersIDs, thisPeer)
 			}
+		}
 
-			msg := &messages.RequestMsgBodyMessage{
-				ReqHash:     targetHash,
-				ReqKey:      key,
-				RequestType: 0,
-				Msg:         nil,
-			}
-
-			switch msgType {
-			case messages.TSSKeyGenVerMsg:
-				msg.RequestType = messages.TSSKeyGenMsg
-				return t.processRequestMsgFromPeer(peersIDs, msg, true)
-			case messages.TSSKeySignVerMsg:
-				msg.RequestType = messages.TSSKeySignMsg
-				return t.processRequestMsgFromPeer(peersIDs, msg, true)
-			default:
-				t.logger.Debug().Msg("unknown message type for request")
-				return nil
-			}
-		} else {
-			if err != nil {
-				return errors.New("fail to calculate the threshold")
-			}
-			err = t.hashCheck(localCacheItem, threshold)
-			if err != nil {
-				if err == ErrMsgHashCheck {
-					blamePk, err := partyIDtoPubKey(partyInfo.PartyIDMap[localCacheItem.Msg.Routing.From.Id])
-					if err != nil {
-						t.logger.Error().Err(err).Msgf("error in get the blame nodes")
-						t.BlamePeers.SetBlame(BlameHashCheck, nil)
-						return fmt.Errorf("error in getting the blame nodes %w", ErrMsgHashCheck)
-					}
-					blameNode := NewBlameNode(blamePk, localCacheItem.Msg.Message, localCacheItem.Msg.Sig)
-					t.BlamePeers.SetBlame(BlameHashCheck, []BlameNode{blameNode})
-					return ErrMsgHashCheck
+		msg := &messages.RequestMsgBodyMessage{
+			ReqHash:     targetHash,
+			ReqKey:      key,
+			RequestType: 0,
+			Msg:         nil,
+		}
+		t.msgStored.setRequest(targetHash)
+		switch msgType {
+		case messages.TSSKeyGenVerMsg:
+			msg.RequestType = messages.TSSKeyGenMsg
+			return t.processRequestMsgFromPeer(peersIDs, msg, true)
+		case messages.TSSKeySignVerMsg:
+			msg.RequestType = messages.TSSKeySignMsg
+			return t.processRequestMsgFromPeer(peersIDs, msg, true)
+		default:
+			t.logger.Debug().Msg("unknown message type for request")
+			return nil
+		}
+	} else {
+		t.msgStored.storeTssMsg(key, localCacheItem.Msg)
+		err = t.hashCheck(localCacheItem, threshold)
+		if err != nil {
+			if err == ErrMsgHashCheck {
+				blamePk, err := partyIDtoPubKey(partyInfo.PartyIDMap[localCacheItem.Msg.Routing.From.Id])
+				if err != nil {
+					t.logger.Error().Err(err).Msgf("error in get the blame nodes")
+					t.BlamePeers.SetBlame(BlameHashCheck, nil)
+					return fmt.Errorf("error in getting the blame nodes %w", ErrMsgHashCheck)
 				}
-				//blamePeers, err := t.getHashCheckBlamePeers(localCacheItem, errHashCheck)
-				//if err != nil {
-				//	t.logger.Error().Err(err).Msgf("error in get the blame nodes")
-				//	t.BlamePeers.SetBlame(BlameHashCheck, nil)
-				//	return fmt.Errorf("error in getting the blame nodes %w", errHashCheck)
-				//}
-				//blamePubKeys, _, err := t.GetBlamePubKeysLists(blamePeers)
-				//if err != nil {
-				//	t.logger.Error().Err(err).Msg("fail to get the blame nodes public key")
-				//
-				//	t.BlamePeers.SetBlame(BlameHashCheck, nil)
-				//	return fmt.Errorf("fail to get the blame nodes public key %w", errHashCheck)
-				//}
-				//t.BlamePeers.SetBlame(BlameHashCheck, blamePubKeys)
-				//t.logger.Error().Msg("The consistency check failed")
+				blameNode := NewBlameNode(blamePk, localCacheItem.Msg.Message, localCacheItem.Msg.Sig)
+				t.BlamePeers.SetBlame(BlameHashCheck, []BlameNode{blameNode})
 				return ErrMsgHashCheck
 			}
-
+			//fixme add blame
+			return ErrMsgHashCheck
 		}
+
 		if err := t.updateLocal(localCacheItem.Msg); nil != err {
 			return fmt.Errorf("fail to update the message to local party: %w", err)
 		}
-		t.msgStored.storeTssMsg(key, localCacheItem.Msg)
 		// the information had been confirmed by all party , we don't need it anymore
 		t.logger.Debug().Msgf("remove key: %s", key)
 		t.removeKey(key)
-
 	}
 
 	return nil
@@ -533,37 +526,6 @@ func (t *TssCommon) broadcastHashToPeers(key, msgHash string, peerIDs []peer.ID,
 		return fmt.Errorf("fail to marshal borad cast confirm message: %w", err)
 	}
 	t.logger.Debug().Msg("broadcast VerMsg to all other parties")
-
-	p2pWrappedMSg := messages.WrappedMessage{
-		MessageType: msgType,
-		MsgID:       t.msgID,
-		Payload:     buf,
-	}
-	t.renderToP2P(&messages.BroadcastMsgChan{
-		WrappedMessage: p2pWrappedMSg,
-		PeersID:        peerIDs,
-	})
-
-	return nil
-}
-
-func (t *TssCommon) broadcastHashToPeers(key, msgHash string, peerIDs []peer.ID, msgType messages.THORChainTSSMessageType) error {
-	broadcastConfirmMsg := &messages.BroadcastConfirmMessage{
-		// P2PID will be filled up by the receiver.
-		P2PID: "",
-		Key:   key,
-		Hash:  msgHash,
-	}
-	buf, err := json.Marshal(broadcastConfirmMsg)
-	if err != nil {
-		return fmt.Errorf("fail to marshal borad cast confirm message: %w", err)
-	}
-	t.logger.Debug().Msg("broadcast VerMsg to all other parties")
-
-	if len(peerIDs) == 0 {
-		t.logger.Error().Err(err).Msg("fail to get any peer ID")
-		return errors.New("fail to get any peer ID")
-	}
 
 	p2pWrappedMSg := messages.WrappedMessage{
 		MessageType: msgType,
@@ -621,6 +583,7 @@ func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType message
 	key := wireMsg.GetCacheKey()
 
 	localCacheItem := t.TryGetLocalCacheItem(key)
+	t.msgStored.storeTssMsg(key, wireMsg)
 	if nil == localCacheItem {
 		t.logger.Debug().Msgf("++%s doesn't exist yet,add a new one", key)
 		localCacheItem = NewLocalCacheItem(wireMsg, msgHash)
@@ -635,12 +598,16 @@ func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType message
 		}
 	}
 	localCacheItem.UpdateConfirmList(t.localPeerID, msgHash)
-	if localCacheItem.TotalConfirmParty() == (len(partyInfo.PartyIDMap) - 1) {
+
+	threshold, err := GetThreshold(len(partyInfo.PartyIDMap))
+	if err != nil {
+		return err
+	}
+	if t.hashCheck(localCacheItem, threshold) == nil {
 		if err := t.updateLocal(localCacheItem.Msg); nil != err {
 			return fmt.Errorf("fail to update the message to local party: %w", err)
 		}
 		t.logger.Debug().Msgf("remove key: %s", key)
-		t.msgStored.storeTssMsg(key, localCacheItem.Msg)
 		t.removeKey(key)
 	}
 	var peerIDs []peer.ID

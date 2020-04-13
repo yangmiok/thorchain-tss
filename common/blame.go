@@ -56,12 +56,19 @@ func (b *Blame) SetBlame(reason string, nodes []BlameNode) {
 	b.BlameNodes = append(b.BlameNodes, nodes...)
 }
 
+func (b *Blame) AlreadyBlame() bool {
+	if len(b.BlameNodes) != 0 {
+		return true
+	}
+	return false
+}
+
 // AddBlameNodes add nodes to the blame list
 func (b *Blame) AddBlameNodes(nodePubKeys ...BlameNode) {
 	for _, node := range nodePubKeys {
 		found := false
 		for _, item := range b.BlameNodes {
-			if bytes.Equal(item.BlameSignature, node.BlameSignature) {
+			if bytes.Equal(item.BlameSignature, node.BlameSignature) && item.Pubkey == node.Pubkey {
 				found = true
 				break
 			}
