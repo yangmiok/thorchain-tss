@@ -2,9 +2,10 @@ package common
 
 import (
 	"errors"
-	"gitlab.com/thorchain/tss/go-tss/messages"
 	"sync"
 	"time"
+
+	"gitlab.com/thorchain/tss/go-tss/messages"
 )
 
 const (
@@ -16,6 +17,7 @@ const (
 
 var (
 	ErrHashFromOwner     = errors.New(" hash sent from data owner")
+	ErrNotEnoughPeer     = errors.New("not enough nodes to evaluate hash")
 	ErrMsgHashCheck      = errors.New("message we received does not match the majority")
 	ErrHashFromPeer      = errors.New("hashcheck error from peer")
 	ErrTssTimeOut        = errors.New("error Tss Timeout")

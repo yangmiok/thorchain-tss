@@ -265,64 +265,6 @@ func (s *TssKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 	wg.Wait()
 }
 
-func (s *TssKeygenTestSuite) TestGenerateNewKeyRejectSendToOnePeer(c *C) {
-	sort.Strings(testPubKeys)
-	req := NewRequest(testPubKeys)
-	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
-	c.Assert(err, IsNil)
-	conf := common.TssConfig{
-		KeyGenTimeout:   5 * time.Second,
-		KeySignTimeout:  5 * time.Second,
-		PreParamTimeout: 5 * time.Second,
-	}
-	wg := sync.WaitGroup{}
-	for i := 0; i < s.partyNum; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			comm := s.comms[idx]
-			stopChan := make(chan struct{})
-			localPubKey := testPubKeys[idx]
-			keygenInstance := NewTssKeyGen(
-				comm.GetLocalPeerID(),
-				conf,
-				localPubKey,
-				comm.BroadcastMsgChan,
-				stopChan,
-				s.preParams[idx],
-				messageID,
-				s.stateMgrs[idx],
-				s.nodePrivKeys[idx])
-			c.Assert(keygenInstance, NotNil)
-			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
-			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
-			comm.SetSubscribe(messages.TSSKeyGenVerMsg, messageID, keygenMsgChannel)
-			comm.SetSubscribe(messages.TSSMsgBody, messageID, keygenMsgChannel)
-			defer comm.CancelSubscribe(messages.TSSKeyGenMsg, messageID)
-			defer comm.CancelSubscribe(messages.TSSKeyGenVerMsg, messageID)
-			defer comm.CancelSubscribe(messages.TSSMsgBody, messageID)
-
-			if idx == 1 {
-				go func() {
-					time.Sleep(time.Millisecond * 20)
-					peersID := keygenInstance.tssCommonStruct.P2PPeers
-					sort.Slice(peersID, func(i, j int) bool {
-						return peersID[i].String() > peersID[j].String()
-					})
-					peersID[0] = peersID[len(peersID)-1]
-					peersID[len(peersID)-1] = ""
-					peersID = peersID[:len(peersID)-1]
-					keygenInstance.tssCommonStruct.P2PPeers = peersID
-				}()
-
-			}
-			_, err := keygenInstance.GenerateNewKey(req)
-			c.Assert(err, IsNil)
-		}(i)
-	}
-	wg.Wait()
-}
-
 func (s *TssKeygenTestSuite) TestKeyGenWithError(c *C) {
 	req := Request{
 		Keys: testPubKeys[:],

@@ -37,7 +37,7 @@ func (TssCommonTestSuite) TestTssCommon(c *C) {
 	}()
 	bi, err := MsgToHashInt([]byte("whatever"))
 	c.Assert(err, IsNil)
-	wrapMsg := fabricateTssMsg(c, sk, btss.NewPartyID("1,", "test", bi), "roundInfo", "message")
+	wrapMsg := fabricateTssMsg(c, sk, btss.NewPartyID("1,", "test", bi), "roundInfo", "message", "123")
 	buf, err := json.Marshal(wrapMsg)
 	c.Assert(err, IsNil)
 	pMsg := &p2p.Message{

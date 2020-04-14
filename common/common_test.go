@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -139,7 +140,7 @@ func (t *TssTestSuite) TestTssProcessOutCh(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func fabricateTssMsg(c *C, privKey tcrypto.PrivKey, partyID *btss.PartyID, roundInfo, msg string) *messages.WrappedMessage {
+func fabricateTssMsg(c *C, privKey tcrypto.PrivKey, partyID *btss.PartyID, roundInfo, msg, msgID string) *messages.WrappedMessage {
 	routingInfo := btss.MessageRouting{
 		From:                    partyID,
 		To:                      nil,
@@ -147,7 +148,10 @@ func fabricateTssMsg(c *C, privKey tcrypto.PrivKey, partyID *btss.PartyID, round
 		IsToOldCommittee:        false,
 		IsToOldAndNewCommittees: false,
 	}
-	sig, err := privKey.Sign([]byte(msg))
+	var dataForSign bytes.Buffer
+	dataForSign.WriteString(msg)
+	dataForSign.WriteString(msgID)
+	sig, err := privKey.Sign(dataForSign.Bytes())
 	c.Assert(err, IsNil)
 	wiredMessage := messages.WireMessage{
 		Routing:   &routingInfo,
@@ -191,8 +195,9 @@ func senderIDtoPubKey(senderID *btss.PartyID) (string, error) {
 func (t *TssTestSuite) testVerMsgDuplication(c *C, privKey tcrypto.PrivKey, tssCommonStruct *TssCommon, senderID *btss.PartyID, partiesID []*btss.PartyID) {
 	testMsg := "testVerMsgDuplication"
 	roundInfo := "round testVerMsgDuplication"
+	tssCommonStruct.msgID = "123"
 	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
-	wrappedMsg := fabricateTssMsg(c, privKey, senderID, roundInfo, testMsg)
+	wrappedMsg := fabricateTssMsg(c, privKey, senderID, roundInfo, testMsg, tssCommonStruct.msgID)
 	err := tssCommonStruct.ProcessOneMessage(wrappedMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[1].Id].String())
 	c.Assert(err, IsNil)
 	localItem := tssCommonStruct.TryGetLocalCacheItem(msgKey)
@@ -207,7 +212,6 @@ func setupProcessVerMsgEnv(c *C, privKey tcrypto.PrivKey, keyPool []string, part
 	tssCommonStruct := NewTssCommon("", nil, conf, "test", privKey)
 	localTestPubKeys := make([]string, partyNum)
 	copy(localTestPubKeys, keyPool[:partyNum])
-	fmt.Printf("######len===%d\n", len(localTestPubKeys))
 	// for the test, we choose the first pubic key as the test instance public key
 	partiesID, localPartyID, err := GetParties(localTestPubKeys, keyPool[0])
 	c.Assert(err, IsNil)
@@ -240,7 +244,7 @@ func (t *TssTestSuite) testDropMsgOwner(c *C, privKey tcrypto.PrivKey, tssCommon
 	msgHash, err := BytesToHashString([]byte(testMsg))
 	c.Assert(err, IsNil)
 	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
-	senderMsg := fabricateTssMsg(c, privKey, senderID, roundInfo, testMsg)
+	senderMsg := fabricateTssMsg(c, privKey, senderID, roundInfo, testMsg, "123")
 
 	ssss, err := getPeerIDFromPartyID(senderID)
 	c.Assert(err, IsNil)
@@ -275,7 +279,7 @@ func (t *TssTestSuite) testVerMsgAndUpdate(c *C, tssCommonStruct *TssCommon, sen
 	msgHash, err := BytesToHashString([]byte(testMsg))
 	c.Assert(err, IsNil)
 	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
-	wrappedMsg := fabricateTssMsg(c, t.privKey, senderID, roundInfo, testMsg)
+	wrappedMsg := fabricateTssMsg(c, t.privKey, senderID, roundInfo, testMsg, "123")
 	// you can pass any p2pID in Tss message
 	err = tssCommonStruct.ProcessOneMessage(wrappedMsg, tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())
 	c.Assert(err, IsNil)
@@ -356,27 +360,4 @@ func (t *TssTestSuite) TestProcessVerMessage(c *C) {
 	sender := findSender(partiesID)
 	t.testVerMsgDuplication(c, t.privKey, tssCommonStruct, sender, peerPartiesID)
 	t.testVerMsgAndUpdate(c, tssCommonStruct, sender, partiesID)
-}
-
-func constructMsg(c *C, privKey tcrypto.PrivKey, senderID *btss.PartyID, testParties TestParties, modifiedHash []string, roundInfo, modifiedOwnerMsg string) (*messages.WrappedMessage, map[int]*messages.WrappedMessage, string) {
-	wrappedMsgMap := make(map[int]*messages.WrappedMessage)
-	testMsg := "testVerMsgWrongHash"
-	msgHash, err := BytesToHashString([]byte(testMsg))
-	c.Assert(err, IsNil)
-	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
-	senderMsg := fabricateTssMsg(c, privKey, senderID, roundInfo, testMsg)
-	if len(modifiedOwnerMsg) != 0 {
-		senderMsg = fabricateTssMsg(c, privKey, senderID, roundInfo, modifiedOwnerMsg)
-	}
-
-	// we send the verify message from the the same sender, Tss should only accept the first verify message
-	for _, each := range testParties.honest {
-		wrappedMsgMap[each] = fabricateVerMsg(c, msgHash, msgKey)
-	}
-
-	for i, each := range testParties.malicious {
-		hash := modifiedHash[i]
-		wrappedMsgMap[each] = fabricateVerMsg(c, hash, msgKey)
-	}
-	return senderMsg, wrappedMsgMap, msgKey
 }

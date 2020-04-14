@@ -140,6 +140,10 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			tssCommonStruct := tKeyGen.GetTssCommonStruct()
 
 			lastMsg := tKeyGen.lastMsg
+			if lastMsg == nil {
+				tKeyGen.logger.Error().Msg("fail to start the keygen, the last produced message of this node is none")
+				return nil, errors.New("timeout before shared message is generated")
+			}
 			var blameNodes []common.BlameNode
 			var err error
 			if lastMsg.IsBroadcast() == false {

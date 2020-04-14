@@ -170,6 +170,7 @@ func (c *Communication) readFromStream(stream network.Stream) {
 		channel := c.getSubscriber(wrappedMsg.MessageType, wrappedMsg.MsgID)
 		if nil == channel {
 			c.logger.Info().Msgf("no MsgID %s found for this message", wrappedMsg.MsgID)
+			c.logger.Info().Msgf("no MsgID %s found for this message", wrappedMsg.MessageType)
 			return
 		}
 		channel <- &Message{

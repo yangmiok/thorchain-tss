@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -197,8 +198,13 @@ func (t *TssCommon) updateLocal(wireMsg *messages.WireMessage) error {
 	}
 
 	if _, err := partyInfo.Party.UpdateFromBytes(wireMsg.Message, partyID, wireMsg.Routing.IsBroadcast); nil != err {
-		pk := t.TssWrongShareBlame(wireMsg)
-		blameNode := NewBlameNode(pk, wireMsg.Message, wireMsg.Sig)
+		blamePk := t.TssWrongShareBlame(wireMsg)
+		if blamePk == "" {
+			t.logger.Error().Err(err).Msgf("error in get the blame nodes")
+			t.BlamePeers.SetBlame(BlameHashCheck, nil)
+			return fmt.Errorf("error in getting the blame nodes ")
+		}
+		blameNode := NewBlameNode(blamePk, wireMsg.Message, wireMsg.Sig)
 		t.BlamePeers.SetBlame(BlameHashCheck, []BlameNode{blameNode})
 		return fmt.Errorf("fail to set bytes to local party: %w", err)
 	}
@@ -298,11 +304,15 @@ func (t *TssCommon) hashCheck(localCacheItem *LocalCacheItem, threshold int) err
 		t.logger.Warn().Msgf("error in find the data Owner P2PID\n")
 		return errors.New("error in find the data Owner P2PID")
 	}
+
+	if localCacheItem.TotalConfirmParty() < threshold {
+		t.logger.Debug().Msg("not enough nodes to evaluate the hash")
+		return ErrNotEnoughPeer
+	}
 	localCacheItem.lock.Lock()
 	defer localCacheItem.lock.Unlock()
 
 	targetHashValue := localCacheItem.Hash
-
 	for P2PID, _ := range localCacheItem.ConfirmedList {
 		if P2PID == dataOwnerP2PID.String() {
 			t.logger.Warn().Msgf("we detect that the data owner try to send the hash for his own message\n")
@@ -318,7 +328,7 @@ func (t *TssCommon) hashCheck(localCacheItem *LocalCacheItem, threshold int) err
 		t.logger.Debug().Msgf("hash check complete for messageID: %v", t.msgID)
 		return nil
 	}
-
+	fmt.Printf("%s------%s\n", targetHashValue, hash)
 	return ErrMsgHashCheck
 
 }
@@ -329,8 +339,14 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 	if err != nil {
 		return fmt.Errorf("fail to get wire bytes: %w", err)
 	}
-	sig, err := t.privateKey.Sign(buf)
-
+	var dataForSigning bytes.Buffer
+	dataForSigning.Write(buf)
+	dataForSigning.WriteString(t.msgID)
+	sig, err := t.privateKey.Sign(dataForSigning.Bytes())
+	if err != nil {
+		t.logger.Error().Err(err).Msg("fail to sign message")
+		return err
+	}
 	wireMsg := messages.WireMessage{
 		Routing:   r,
 		RoundInfo: msg.Type(),
@@ -443,8 +459,7 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirm
 		return err
 	}
 	if localCacheItem.Msg == nil {
-		// in acquiring the message, we do not need to have the threshold check
-		targetHash, err := t.getMsgHash(localCacheItem, 0)
+		targetHash, err := t.getMsgHash(localCacheItem, threshold)
 		if err != nil {
 			return err
 		}
@@ -482,9 +497,12 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirm
 		t.msgStored.storeTssMsg(key, localCacheItem.Msg)
 		err = t.hashCheck(localCacheItem, threshold)
 		if err != nil {
-			if err == ErrMsgHashCheck {
-				blamePk, err := partyIDtoPubKey(partyInfo.PartyIDMap[localCacheItem.Msg.Routing.From.Id])
-				if err != nil {
+			if errors.Is(err, ErrNotEnoughPeer) {
+				return err
+			}
+			if errors.Is(err, ErrMsgHashCheck) || errors.Is(err, ErrHashInconsistency) {
+				blamePk := t.TssWrongShareBlame(localCacheItem.Msg)
+				if blamePk == "" {
 					t.logger.Error().Err(err).Msgf("error in get the blame nodes")
 					t.BlamePeers.SetBlame(BlameHashCheck, nil)
 					return fmt.Errorf("error in getting the blame nodes %w", ErrMsgHashCheck)
@@ -493,8 +511,7 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirm
 				t.BlamePeers.SetBlame(BlameHashCheck, []BlameNode{blameNode})
 				return ErrMsgHashCheck
 			}
-			//fixme add blame
-			return ErrMsgHashCheck
+			return err
 		}
 
 		if err := t.updateLocal(localCacheItem.Msg); nil != err {
@@ -540,6 +557,33 @@ func (t *TssCommon) broadcastHashToPeers(key, msgHash string, peerIDs []peer.ID,
 	return nil
 }
 
+func (t *TssCommon) receiverBroadcastHashToPeers(wireMsg *messages.WireMessage, msgType messages.THORChainTSSMessageType) error {
+	var peerIDs []peer.ID
+	dataOwnerPartyID := wireMsg.Routing.From.Id
+	dataOwnerPeerID, ok := t.PartyIDtoP2PID[dataOwnerPartyID]
+	if !ok {
+		return errors.New("error in find the data owner peerID")
+	}
+	for _, el := range t.P2PPeers {
+		if el == dataOwnerPeerID {
+			continue
+		}
+		peerIDs = append(peerIDs, el)
+	}
+	msgVerType := getBroadcastMessageType(msgType)
+	key := wireMsg.GetCacheKey()
+	msgHash, err := BytesToHashString(wireMsg.Message)
+	if err != nil {
+		return fmt.Errorf("fail to calculate hash of the wire message: %w", err)
+	}
+	err = t.broadcastHashToPeers(key, msgHash, peerIDs, msgVerType)
+	if err != nil {
+		t.logger.Error().Err(err).Msg("fail to broadcast the hash to peers")
+		return err
+	}
+	return nil
+}
+
 // processTSSMsg
 func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType messages.THORChainTSSMessageType) error {
 	t.logger.Debug().Msg("process wire message")
@@ -556,32 +600,30 @@ func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType message
 		t.logger.Error().Msg("error in find the data owner")
 		return errors.New("error in find the data owner")
 	}
-
 	keyBytes := dataOwner.GetKey()
 	var pk secp256k1.PubKeySecp256k1
 	copy(pk[:], keyBytes)
-	//out, _ := sdk.Bech32ifyAccPub(pk)
-
-	//for id, el := range partyIDMap {
-	//	var pk secp256k1.PubKeySecp256k1
-	//	copy(pk[:], el.Key)
-	//	out, _ := sdk.Bech32ifyAccPub(pk)
-	//	fmt.Printf("-----%v---->%v\n", id, out)
-	//}
-
-	ok = pk.VerifyBytes(wireMsg.Message, wireMsg.Sig)
+	var dataForSign bytes.Buffer
+	dataForSign.Write(wireMsg.Message)
+	dataForSign.WriteString(t.msgID)
+	ok = pk.VerifyBytes(dataForSign.Bytes(), wireMsg.Sig)
 	if !ok {
 		t.logger.Error().Msg("fail to verify the signature")
 		return errors.New("signature verification failed")
 	}
 	// broadcast message , we save a copy locally , and then tell all others what we got
+
+	err := t.receiverBroadcastHashToPeers(wireMsg, msgType)
+	if err != nil {
+		t.logger.Error().Err(err).Msg("fail to broadcast msg to peers")
+	}
+
+	partyInfo := t.getPartyInfo()
+	key := wireMsg.GetCacheKey()
 	msgHash, err := BytesToHashString(wireMsg.Message)
 	if err != nil {
 		return fmt.Errorf("fail to calculate hash of the wire message: %w", err)
 	}
-	partyInfo := t.getPartyInfo()
-	key := wireMsg.GetCacheKey()
-
 	localCacheItem := t.TryGetLocalCacheItem(key)
 	t.msgStored.storeTssMsg(key, wireMsg)
 	if nil == localCacheItem {
@@ -603,31 +645,29 @@ func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType message
 	if err != nil {
 		return err
 	}
-	if t.hashCheck(localCacheItem, threshold) == nil {
-		if err := t.updateLocal(localCacheItem.Msg); nil != err {
-			return fmt.Errorf("fail to update the message to local party: %w", err)
-		}
-		t.logger.Debug().Msgf("remove key: %s", key)
-		t.removeKey(key)
-	}
-	var peerIDs []peer.ID
-	dataOwnerPartyID := wireMsg.Routing.From.Id
-	dataOwnerPeerID, ok := t.PartyIDtoP2PID[dataOwnerPartyID]
-	if !ok {
-		return errors.New("error in find the data owner peerID")
-	}
-	for _, el := range t.P2PPeers {
-		if el == dataOwnerPeerID {
-			continue
-		}
-		peerIDs = append(peerIDs, el)
-	}
-	msgVerType := getBroadcastMessageType(msgType)
-	err = t.broadcastHashToPeers(key, msgHash, peerIDs, msgVerType)
+	err = t.hashCheck(localCacheItem, threshold)
 	if err != nil {
-		t.logger.Error().Err(err).Msg("fail to broadcast the hash to peers")
+		if errors.Is(err, ErrNotEnoughPeer) {
+			return nil
+		}
+		if errors.Is(err, ErrMsgHashCheck) || errors.Is(err, ErrHashInconsistency) {
+			blamePk := t.TssWrongShareBlame(localCacheItem.Msg)
+			if blamePk == "" {
+				t.logger.Error().Err(err).Msgf("error in get the blame nodes")
+				t.BlamePeers.SetBlame(BlameHashCheck, nil)
+				return fmt.Errorf("error in getting the blame nodes %w", ErrMsgHashCheck)
+			}
+			blameNode := NewBlameNode(blamePk, localCacheItem.Msg.Message, localCacheItem.Msg.Sig)
+			t.BlamePeers.SetBlame(BlameHashCheck, []BlameNode{blameNode})
+		}
 		return err
 	}
+	if err := t.updateLocal(localCacheItem.Msg); nil != err {
+		return fmt.Errorf("fail to update the message to local party: %w", err)
+	}
+	t.logger.Debug().Msgf("remove key: %s", key)
+	t.removeKey(key)
+
 	return nil
 }
 
