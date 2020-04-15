@@ -38,12 +38,17 @@ func NewNotifier(messageID string, message []byte, poolPubKey string) (*Notifier
 	}, nil
 }
 
+// verifySignature is a method to verify the signature against the message it signed , if the signature can be verified successfully
+// There is a method call VerifyBytes in crypto.PubKey, but we can't use that method to verify the signature, because it always hash the message
+// first and then verify the hash of the message against the signature , which is not the case in tss
+// go-tss respect the payload it receives , assume the payload had been hashed already by whoever send it in.
 func (n *Notifier) verifySignature(data *bc.SignatureData) (bool, error) {
 	// we should be able to use any of the pubkeys to verify the signature
 	pubKey, err := sdk.GetAccPubKeyBech32(n.poolPubKey)
 	if err != nil {
 		return false, fmt.Errorf("fail to get pubkey from bech32 pubkey string(%s):%w", n.poolPubKey, err)
 	}
+
 	sig, err := btcec.ParseSignature(n.getSignatureBytes(data), btcec.S256())
 	if err != nil {
 		return false, fmt.Errorf("fail to parse signature: %w", err)
