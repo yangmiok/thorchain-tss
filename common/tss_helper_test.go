@@ -80,6 +80,16 @@ func (t *tssHelpSuite) TestMsgSignAndVerification(c *C) {
 	c.Assert(ret, Equals, false)
 }
 
+func (t *tssHelpSuite) TestMsgSignAndVerification(c *C) {
+	msg := []byte("hello")
+	msgID := "123"
+	sk := secp256k1.GenPrivKey()
+	sig, err := generateSignature(msg, msgID, sk)
+	c.Assert(err, IsNil)
+	ret := verifySignature(sk.PubKey(), msg, sig, msgID)
+	c.Assert(ret, Equals, true)
+}
+
 func (t *tssHelpSuite) TestBroadcastBlame(c *C) {
 	pi := t.tssCommon.getPartyInfo()
 

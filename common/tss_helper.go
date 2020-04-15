@@ -150,17 +150,6 @@ func verifySignature(pubKey tcrypto.PubKey, message, sig []byte, msgID string) b
 	return pubKey.VerifyBytes(dataForSign.Bytes(), sig)
 }
 
-func partyIDtoPubKey(party *btss.PartyID) (string, error) {
-	partyKeyBytes := party.GetKey()
-	var pk secp256k1.PubKeySecp256k1
-	copy(pk[:], partyKeyBytes)
-	pubKey, err := sdk.Bech32ifyAccPub(pk)
-	if err != nil {
-		return "", err
-	}
-	return pubKey, nil
-}
-
 // GetBlamePubKeysInList returns the nodes public key who are in the peer list
 func (t *TssCommon) getBlamePubKeysInList(peers []string) ([]string, error) {
 	var partiesInList []string
