@@ -59,7 +59,6 @@ func (n *Notifier) verifySignature(data *bc.SignatureData) (bool, error) {
 		return false, fmt.Errorf("fail to parse pubkey: %w", err)
 	}
 	return sig.Verify(n.message, pub), nil
-
 }
 
 func (n *Notifier) getSignatureBytes(data *bc.SignatureData) []byte {

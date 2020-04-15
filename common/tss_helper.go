@@ -323,7 +323,6 @@ func (t *TssCommon) GetUnicastBlame(msgType string) ([]string, error) {
 }
 
 func (t *TssCommon) GetBroadcastBlame(lastMessageType string) ([]string, error) {
-
 	localCachedItems := t.TryGetAllLocalCached()
 	blamePeers, err := t.TssTimeoutBlame(localCachedItems, lastMessageType)
 	if err != nil {
