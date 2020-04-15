@@ -12,11 +12,11 @@ import (
 	"os"
 
 	btss "github.com/binance-chain/tss-lib/tss"
+	"github.com/btcsuite/btcd/btcec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/tendermint/btcd/btcec"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 )
 
@@ -323,6 +323,7 @@ func (t *TssCommon) GetUnicastBlame(msgType string) ([]string, error) {
 }
 
 func (t *TssCommon) GetBroadcastBlame(lastMessageType string) ([]string, error) {
+
 	localCachedItems := t.TryGetAllLocalCached()
 	blamePeers, err := t.TssTimeoutBlame(localCachedItems, lastMessageType)
 	if err != nil {

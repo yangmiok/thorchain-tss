@@ -8,6 +8,7 @@ import (
 	bc "github.com/binance-chain/tss-lib/common"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/tendermint/btcd/btcec"
+	"github.com/tendermint/tendermint/crypto/secp256k1"
 )
 
 // Notifier
@@ -43,7 +44,17 @@ func (n *Notifier) verifySignature(data *bc.SignatureData) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("fail to get pubkey from bech32 pubkey string(%s):%w", n.poolPubKey, err)
 	}
-	return pubKey.VerifyBytes(n.message, n.getSignatureBytes(data)), nil
+	sig, err := btcec.ParseSignature(n.getSignatureBytes(data), btcec.S256())
+	if err != nil {
+		return false, fmt.Errorf("fail to parse signature: %w", err)
+	}
+	pk := pubKey.(secp256k1.PubKeySecp256k1)
+	pub, err := btcec.ParsePubKey(pk[:], btcec.S256())
+	if err != nil {
+		return false, fmt.Errorf("fail to parse pubkey: %w", err)
+	}
+	return sig.Verify(n.message, pub), nil
+
 }
 
 func (n *Notifier) getSignatureBytes(data *bc.SignatureData) []byte {

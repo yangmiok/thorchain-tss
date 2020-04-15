@@ -155,8 +155,8 @@ func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
 		}
 		c.Assert(signature, Equals, item.S+item.R)
 	}
-
-	keysignReq = keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld+xyz"))), testPubKeys[:3])
+	payload := base64.StdEncoding.EncodeToString(hash([]byte("helloworld+xyz")))
+	keysignReq = keysign.NewRequest(poolPubKey, payload, testPubKeys[:3])
 	keysignResult1 := make(map[int]keysign.Response)
 	for i := 0; i < partyNum; i++ {
 		wg.Add(1)
