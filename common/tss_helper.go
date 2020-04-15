@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bytes"
 	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/hex"
@@ -17,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	tcrypto "github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 )
 
@@ -128,6 +130,20 @@ func AccPubKeysFromPartyIDs(partyIDs []string, partyIDMap map[string]*btss.Party
 		pubKeys = append(pubKeys, blamedPubKey)
 	}
 	return pubKeys, nil
+}
+
+func generateSignature(msg []byte, msgID string, privKey tcrypto.PrivKey) ([]byte, error) {
+	var dataForSigning bytes.Buffer
+	dataForSigning.Write(msg)
+	dataForSigning.WriteString(msgID)
+	return privKey.Sign(dataForSigning.Bytes())
+}
+
+func verifySignature(pubKey tcrypto.PubKey, message, sig []byte, msgID string) bool {
+	var dataForSign bytes.Buffer
+	dataForSign.Write(message)
+	dataForSign.WriteString(msgID)
+	return pubKey.VerifyBytes(dataForSign.Bytes(), sig)
 }
 
 // GetBlamePubKeysInList returns the nodes public key who are in the peer list

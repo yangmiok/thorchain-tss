@@ -19,6 +19,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	tcrypto "github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 
 	"gitlab.com/thorchain/tss/go-tss"
@@ -47,9 +48,10 @@ type TssCommon struct {
 	BlamePeers          Blame
 	msgID               string
 	lastUnicastPeer     map[string][]peer.ID
+	privateKey          tcrypto.PrivKey
 }
 
-func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgChan, conf TssConfig, msgID string) *TssCommon {
+func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgChan, conf TssConfig, msgID string, privKey tcrypto.PrivKey) *TssCommon {
 	return &TssCommon{
 		conf:                conf,
 		logger:              log.With().Str("module", "tsscommon").Logger(),
@@ -65,6 +67,7 @@ func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgCha
 		BlamePeers:          Blame{},
 		msgID:               msgID,
 		lastUnicastPeer:     make(map[string][]peer.ID),
+		privateKey:          privKey,
 	}
 }
 
@@ -274,10 +277,18 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 	if err != nil {
 		return fmt.Errorf("fail to get wire bytes: %w", err)
 	}
+
+	sig, err := generateSignature(buf, t.msgID, t.privateKey)
+	if err != nil {
+		t.logger.Error().Err(err).Msg("fail to generate the share's signature")
+		return err
+	}
+
 	wireMsg := messages.WireMessage{
 		Routing:   r,
 		RoundInfo: msg.Type(),
 		Message:   buf,
+		Sig:       sig,
 	}
 	wireMsgBytes, err := json.Marshal(wireMsg)
 	if err != nil {
@@ -401,6 +412,22 @@ func (t *TssCommon) broadcastHashToPeers(key, msgHash string, peerIDs []peer.ID,
 func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType messages.THORChainTSSMessageType) error {
 	t.logger.Debug().Msg("process wire message")
 	defer t.logger.Debug().Msg("finish process wire message")
+
+	partyIDMap := t.getPartyInfo().PartyIDMap
+	dataOwner, ok := partyIDMap[wireMsg.Routing.From.Id]
+	if !ok {
+		t.logger.Error().Msg("error in find the data owner")
+		return errors.New("error in find the data owner")
+	}
+	keyBytes := dataOwner.GetKey()
+	var pk secp256k1.PubKeySecp256k1
+	copy(pk[:], keyBytes)
+	ok = verifySignature(pk, wireMsg.Message, wireMsg.Sig, t.msgID)
+	if !ok {
+		t.logger.Error().Msg("fail to verify the signature")
+		return errors.New("signature verify failed")
+	}
+
 	// we only update it local party
 	if !wireMsg.Routing.IsBroadcast {
 		t.logger.Debug().Msgf("msg from %s to %+v", wireMsg.Routing.From, wireMsg.Routing.To)

@@ -11,6 +11,7 @@ import (
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	tcrypto "github.com/tendermint/tendermint/crypto"
 
 	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/messages"
@@ -37,14 +38,15 @@ func NewTssKeyGen(localP2PID string,
 	stopChan chan struct{},
 	preParam *bkg.LocalPreParams,
 	msgID string,
-	stateManager storage.LocalStateManager) *TssKeyGen {
+	stateManager storage.LocalStateManager,
+	privateKey tcrypto.PrivKey) *TssKeyGen {
 	return &TssKeyGen{
 		logger: log.With().
 			Str("module", "keygen").
 			Str("msgID", msgID).Logger(),
 		localNodePubKey: localNodePubKey,
 		preParams:       preParam,
-		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID),
+		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, privateKey),
 		stopChan:        stopChan,
 		localParty:      nil,
 		stateManager:    stateManager,

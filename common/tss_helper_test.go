@@ -4,6 +4,7 @@ import (
 	bkg "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/tendermint/tendermint/crypto/secp256k1"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/tss/go-tss/messages"
@@ -25,7 +26,8 @@ var _ = Suite(&tssHelpSuite{})
 func (t *tssHelpSuite) SetUpTest(c *C) {
 	broadcast := make(chan *messages.BroadcastMsgChan)
 	conf := TssConfig{}
-	tssCommon := NewTssCommon("123", broadcast, conf, "testID")
+	sk := secp256k1.GenPrivKey()
+	tssCommon := NewTssCommon("123", broadcast, conf, "testID", sk)
 	p1, err := peer.Decode(testPeers[0])
 	c.Assert(err, IsNil)
 	p2, err := peer.Decode(testPeers[1])
@@ -55,6 +57,24 @@ func (t *tssHelpSuite) TestGetUnicastBlame(c *C) {
 	blame, err = t.tssCommon.GetUnicastBlame("testType")
 	c.Assert(err, IsNil)
 	c.Assert(blame[0], Equals, testPubKeys[3])
+}
+
+func (t *tssHelpSuite) TestMsgSignAndVerification(c *C) {
+	msg := []byte("hello")
+	msgID := "123"
+	sk := secp256k1.GenPrivKey()
+	sig, err := generateSignature(nil, "", sk)
+	c.Assert(err, IsNil)
+	sk2 := sk
+	sk2[2] = 32
+	sig, err = generateSignature(msg, msgID, sk)
+	c.Assert(err, IsNil)
+	sig2, err := generateSignature(msg, msgID, sk2)
+	c.Assert(err, IsNil)
+	ret := verifySignature(sk.PubKey(), msg, sig, msgID)
+	c.Assert(ret, Equals, true)
+	ret = verifySignature(sk.PubKey(), msg, sig2, msgID)
+	c.Assert(ret, Equals, false)
 }
 
 func (t *tssHelpSuite) TestBroadcastBlame(c *C) {
