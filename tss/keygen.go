@@ -14,7 +14,7 @@ import (
 // keys is the node pub key of the nodes that are supposed to be online
 // onlinePeers is a slice of peer id that actually online
 // this method is to find out the gap
-func (t *TssServer) getBlamePeers(keys []string, onlinePeers []peer.ID, reason string) (common.Blame, error) {
+func (t *TssServer) getBlamePeersInNodeSync(keys []string, onlinePeers []peer.ID, reason string) (common.Blame, error) {
 	blame := common.Blame{
 		FailReason: reason,
 	}
@@ -31,7 +31,7 @@ func (t *TssServer) getBlamePeers(keys []string, onlinePeers []peer.ID, reason s
 			}
 		}
 		if !found {
-			blame.BlameNodes = append(blame.BlameNodes, item)
+			blame.BlameNodes = append(blame.BlameNodes, common.NewBlameNode(item, nil, nil))
 		}
 	}
 	return blame, nil
@@ -69,10 +69,10 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 			t.logger.Error().Err(err).Msg("error before we start join party")
 			return keygen.Response{
 				Status: common.Fail,
-				Blame:  common.NewBlame(common.BlameInternalError, []string{}),
+				Blame:  common.NewBlame(common.BlameInternalError, []common.BlameNode{}),
 			}, nil
 		}
-		blame, err := t.getBlamePeers(req.Keys, onlinePeers, common.BlameTssSync)
+		blame, err := t.getBlamePeersInNodeSync(req.Keys, onlinePeers, common.BlameTssSync)
 		if err != nil {
 			t.logger.Err(err).Msg("fail to get peers to blame")
 		}

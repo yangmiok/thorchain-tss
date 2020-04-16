@@ -11,7 +11,7 @@ import (
 
 	bcrypto "github.com/binance-chain/tss-lib/crypto"
 
-	"gitlab.com/thorchain/tss/go-tss"
+	go_tss "gitlab.com/thorchain/tss/go-tss"
 	"gitlab.com/thorchain/tss/go-tss/messages"
 	"gitlab.com/thorchain/tss/go-tss/p2p"
 )

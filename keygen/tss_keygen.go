@@ -112,7 +112,20 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq Request) (*crypto.ECPoint, er
 		}
 	}()
 	go tKeyGen.tssCommonStruct.ProcessInboundMessages(tKeyGen.commStopChan, &keyGenWg)
+
 	r, err := tKeyGen.processKeyGen(errChan, outCh, endCh, keyGenLocalStateItem)
+	if err != nil {
+		close(tKeyGen.commStopChan)
+		return nil, fmt.Errorf("fail to process key sign: %w", err)
+	}
+	select {
+	case <-time.After(time.Second * 5):
+		close(tKeyGen.commStopChan)
+		break
+	case <-tKeyGen.tssCommonStruct.GetTaskDone():
+		break
+	}
+
 	keyGenWg.Wait()
 	return r, err
 }
@@ -123,7 +136,6 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 	keyGenLocalStateItem storage.KeygenLocalState) (*crypto.ECPoint, error) {
 	defer tKeyGen.logger.Info().Msg("finished keygen process")
 	tKeyGen.logger.Info().Msg("start to read messages from local party")
-	defer close(tKeyGen.commStopChan)
 	tssConf := tKeyGen.tssCommonStruct.GetConf()
 	for {
 		select {
@@ -140,7 +152,7 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			tssCommonStruct := tKeyGen.GetTssCommonStruct()
 
 			lastMsg := tKeyGen.lastMsg
-			var blamePeers []string
+			var blamePeers []common.BlameNode
 			var err error
 			if lastMsg.IsBroadcast() == false {
 				blamePeers, err = tssCommonStruct.GetUnicastBlame(lastMsg.Type())
@@ -169,6 +181,10 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 
 		case msg := <-endCh:
 			tKeyGen.logger.Debug().Msgf("keygen finished successfully: %s", msg.ECDSAPub.Y().String())
+			err := tKeyGen.tssCommonStruct.NotifyTaskDone()
+			if err != nil {
+				tKeyGen.logger.Error().Err(err).Msg("fail to broadcast the keysign done")
+			}
 			pubKey, _, err := common.GetTssPubKey(msg.ECDSAPub)
 			if err != nil {
 				return nil, fmt.Errorf("fail to get thorchain pubkey: %w", err)

@@ -92,10 +92,10 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 			t.broadcastKeysignFailure(msgID, signers)
 			return keysign.Response{
 				Status: common.Fail,
-				Blame:  common.NewBlame(common.BlameInternalError, []string{}),
+				Blame:  common.NewBlame(common.BlameInternalError, []common.BlameNode{}),
 			}, nil
 		}
-		blame, err := t.getBlamePeers(req.SignerPubKeys, onlinePeers, common.BlameTssSync)
+		blame, err := t.getBlamePeersInNodeSync(req.SignerPubKeys, onlinePeers, common.BlameTssSync)
 		if err != nil {
 			t.logger.Err(err).Msg("fail to get peers to blame")
 		}

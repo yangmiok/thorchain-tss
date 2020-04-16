@@ -54,7 +54,6 @@ func (t *TssTestSuite) SetUpSuite(c *C) {
 	copy(keyBytesArray[:], rawBytes[:32])
 	priKey := secp256k1.PrivKeySecp256k1(keyBytesArray)
 	t.privKey = priKey
-
 }
 
 func initLog(level string, pretty bool) {
@@ -271,8 +270,8 @@ func (t *TssTestSuite) testDropMsgOwner(c *C, privkey tcrypto.PrivKey, tssCommon
 	}
 	// the data owner's message should be raise an error
 
-	//tssCommonStruct.SetLocalPeerID(tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())
-	//err = tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())
+	// tssCommonStruct.SetLocalPeerID(tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())
+	// err = tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())
 	c.Assert(err, Equals, ErrHashFromOwner)
 	c.Assert(tssCommonStruct.BlamePeers.FailReason, Equals, BlameHashCheck)
 	blamedPubKey, err := senderIDtoPubKey(senderID)
@@ -300,7 +299,7 @@ func (t *TssTestSuite) testVerMsgAndUpdate(c *C, privkey tcrypto.PrivKey, tssCom
 	c.Assert(localItem.ConfirmedList, HasLen, 2)
 	// this error message indicates the message share is accepted by the this system.
 	err = tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[1].Id].String())
-	//c.Assert(tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[2].Id].String()), ErrorMatches, "fail to update the message to local party: fail to set bytes to local party: task , party <nil>, round -1: proto: can't skip unknown wire type 4")
+	// c.Assert(tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[2].Id].String()), ErrorMatches, "fail to update the message to local party: fail to set bytes to local party: task , party <nil>, round -1: proto: can't skip unknown wire type 4")
 }
 
 func (t *TssTestSuite) testVerMsgWrongHash(c *C, tssCommonStruct *TssCommon, senderID *btss.PartyID, peerParties []*btss.PartyID, testParties TestParties, senderMsg *messages.WrappedMessage, peerMsgMap map[int]*messages.WrappedMessage, msgKey string, blameOwner bool) {
@@ -344,7 +343,6 @@ func (t *TssTestSuite) testVerMsgWrongHash(c *C, tssCommonStruct *TssCommon, sen
 				expected = append(expected, pubKey)
 			}
 		}
-		sort.Strings(tssCommonStruct.BlamePeers.BlameNodes)
 		sort.Strings(expected)
 		c.Assert(tssCommonStruct.BlamePeers.BlameNodes, DeepEquals, expected)
 	}
