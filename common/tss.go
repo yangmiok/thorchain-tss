@@ -236,7 +236,7 @@ func (t *TssCommon) checkDupAndUpdateVerMsg(bMsg *messages.BroadcastConfirmMessa
 	return true
 }
 
-func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerID string) error {
+func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerIDStr string) error {
 	t.logger.Debug().Msg("start process one message")
 	defer t.logger.Debug().Msg("finish processing one message")
 	if nil == wrappedMsg {
@@ -256,7 +256,7 @@ func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerI
 			return errors.New("fail to unmarshal broadcast confirm message")
 		}
 		// we check whether this peer has already send us the VerMsg before update
-		ret := t.checkDupAndUpdateVerMsg(&bMsg, peerID)
+		ret := t.checkDupAndUpdateVerMsg(&bMsg, peerIDStr)
 		if ret {
 			return t.processVerMsg(&bMsg)
 		}
@@ -460,6 +460,33 @@ func (t *TssCommon) broadcastHashToPeers(key, msgHash string, peerIDs []peer.ID,
 		PeersID:        peerIDs,
 	})
 
+	return nil
+}
+
+func (t *TssCommon) receiverBroadcastHashToPeers(wireMsg *messages.WireMessage, msgType messages.THORChainTSSMessageType) error {
+	var peerIDs []peer.ID
+	dataOwnerPartyID := wireMsg.Routing.From.Id
+	dataOwnerPeerID, ok := t.PartyIDtoP2PID[dataOwnerPartyID]
+	if !ok {
+		return errors.New("error in find the data owner peerID")
+	}
+	for _, el := range t.P2PPeers {
+		if el == dataOwnerPeerID {
+			continue
+		}
+		peerIDs = append(peerIDs, el)
+	}
+	msgVerType := getBroadcastMessageType(msgType)
+	key := wireMsg.GetCacheKey()
+	msgHash, err := BytesToHashString(wireMsg.Message)
+	if err != nil {
+		return fmt.Errorf("fail to calculate hash of the wire message: %w", err)
+	}
+	err = t.broadcastHashToPeers(key, msgHash, peerIDs, msgVerType)
+	if err != nil {
+		t.logger.Error().Err(err).Msg("fail to broadcast the hash to peers")
+		return err
+	}
 	return nil
 }
 

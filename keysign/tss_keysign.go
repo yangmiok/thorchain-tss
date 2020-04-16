@@ -110,6 +110,7 @@ func (tKeySign *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage
 	}()
 	go tKeySign.tssCommonStruct.ProcessInboundMessages(tKeySign.commStopChan, &keySignWg)
 	result, err := tKeySign.processKeySign(errCh, outCh, endCh)
+
 	if err != nil {
 		close(tKeySign.commStopChan)
 		return nil, fmt.Errorf("fail to process key sign: %w", err)

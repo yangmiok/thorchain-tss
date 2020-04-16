@@ -29,6 +29,7 @@ func (t *TssServer) getBlamePeersInNodeSync(keys []string, onlinePeers []peer.ID
 				found = true
 				break
 			}
+
 		}
 		if !found {
 			blame.BlameNodes = append(blame.BlameNodes, common.NewBlameNode(item, nil, nil))
