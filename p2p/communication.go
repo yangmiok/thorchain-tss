@@ -309,9 +309,11 @@ func (c *Communication) connectToBootstrapPeers() error {
 
 // Start will start the communication
 func (c *Communication) Start(priKeyBytes []byte) error {
-	c.wg.Add(1)
 	err := c.startChannel(priKeyBytes)
-	go c.ProcessBroadcast()
+	if err == nil {
+		c.wg.Add(1)
+		go c.ProcessBroadcast()
+	}
 	return err
 }
 
