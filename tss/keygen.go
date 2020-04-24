@@ -14,7 +14,7 @@ import (
 // keys is the node pub key of the nodes that are supposed to be online
 // onlinePeers is a slice of peer id that actually online
 // this method is to find out the gap
-func (t *TssServer) getBlamePeers(keys []string, onlinePeers []peer.ID, reason string) (common.Blame, error) {
+func (t *TssServer) getBlamePeersInNodeSync(keys []string, onlinePeers []peer.ID, reason string) (common.Blame, error) {
 	blame := common.Blame{
 		FailReason: reason,
 	}
@@ -31,7 +31,7 @@ func (t *TssServer) getBlamePeers(keys []string, onlinePeers []peer.ID, reason s
 			}
 		}
 		if !found {
-			blame.BlameNodes = append(blame.BlameNodes, item)
+			blame.BlameNodes = append(blame.BlameNodes, common.NewBlameNode(item, nil, nil))
 		}
 	}
 	return blame, nil
@@ -60,19 +60,21 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 	keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 	t.p2pCommunication.SetSubscribe(messages.TSSKeyGenMsg, msgID, keygenMsgChannel)
 	t.p2pCommunication.SetSubscribe(messages.TSSKeyGenVerMsg, msgID, keygenMsgChannel)
+	t.p2pCommunication.SetSubscribe(messages.TSSControlMsg, msgID, keygenMsgChannel)
 
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenMsg, msgID)
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenVerMsg, msgID)
+	defer t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, msgID)
 	onlinePeers, err := t.joinParty(msgID, req.Keys)
 	if err != nil {
 		if onlinePeers == nil {
 			t.logger.Error().Err(err).Msg("error before we start join party")
 			return keygen.Response{
 				Status: common.Fail,
-				Blame:  common.NewBlame(common.BlameInternalError, []string{}),
+				Blame:  common.NewBlame(common.BlameInternalError, []common.BlameNode{}),
 			}, nil
 		}
-		blame, err := t.getBlamePeers(req.Keys, onlinePeers, common.BlameTssSync)
+		blame, err := t.getBlamePeersInNodeSync(req.Keys, onlinePeers, common.BlameTssSync)
 		if err != nil {
 			t.logger.Err(err).Msg("fail to get peers to blame")
 		}

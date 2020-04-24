@@ -29,6 +29,7 @@ type TssKeySign struct {
 	localParty      *btss.PartyID
 	commStopChan    chan struct{}
 	lastMsg         btss.Message
+	privateKey      tcrypto.PrivKey
 }
 
 func NewTssKeySign(localP2PID string,
@@ -111,7 +112,15 @@ func (tKeySign *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage
 	go tKeySign.tssCommonStruct.ProcessInboundMessages(tKeySign.commStopChan, &keySignWg)
 	result, err := tKeySign.processKeySign(errCh, outCh, endCh)
 	if err != nil {
+		close(tKeySign.commStopChan)
 		return nil, fmt.Errorf("fail to process key sign: %w", err)
+	}
+
+	select {
+	case <-time.After(time.Second * 5):
+		close(tKeySign.commStopChan)
+	case <-tKeySign.tssCommonStruct.GetTaskDone():
+		close(tKeySign.commStopChan)
 	}
 	keySignWg.Wait()
 
@@ -123,7 +132,6 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 	defer tKeySign.logger.Info().Msg("key sign finished")
 	tKeySign.logger.Info().Msg("start to read messages from local party")
 	tssConf := tKeySign.tssCommonStruct.GetConf()
-	defer close(tKeySign.commStopChan)
 	for {
 		select {
 		case <-errChan: // when key sign return
@@ -137,20 +145,22 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 			tssCommonStruct := tKeySign.GetTssCommonStruct()
 			lastMsg := tKeySign.lastMsg
 
-			var blamePeers []string
+			var blameNodes []common.BlameNode
 			var err error
 			if lastMsg.IsBroadcast() == false {
-				blamePeers, err = tssCommonStruct.GetUnicastBlame(lastMsg.Type())
+				blameNodes, err = tssCommonStruct.GetUnicastBlame(lastMsg.Type())
 				if err != nil {
 					tKeySign.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
 			} else {
-				blamePeers, err = tssCommonStruct.GetBroadcastBlame(lastMsg.Type())
-				if err != nil {
-					tKeySign.logger.Error().Err(err).Msg("error in get broadcast blame")
+				if tssCommonStruct.BlamePeers.AlreadyBlame() == false {
+					blameNodes, err = tssCommonStruct.GetBroadcastBlame(lastMsg.Type())
+					if err != nil {
+						tKeySign.logger.Error().Err(err).Msg("error in get broadcast blame")
+					}
 				}
 			}
-			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blamePeers)
+			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blameNodes)
 			return nil, common.ErrTssTimeOut
 		case msg := <-outCh:
 			tKeySign.logger.Debug().Msgf(">>>>>>>>>>key sign msg: %s", msg.String())
@@ -162,6 +172,10 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 
 		case msg := <-endCh:
 			tKeySign.logger.Debug().Msg("we have done the key sign")
+			err := tKeySign.tssCommonStruct.NotifyTaskDone()
+			if err != nil {
+				tKeySign.logger.Error().Err(err).Msg("fail to broadcast the keysign done")
+			}
 			return &msg, nil
 		}
 	}

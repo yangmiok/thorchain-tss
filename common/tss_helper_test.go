@@ -1,6 +1,8 @@
 package common
 
 import (
+	"sort"
+
 	bkg "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -24,6 +26,7 @@ var testPeers = []string{
 var _ = Suite(&tssHelpSuite{})
 
 func (t *tssHelpSuite) SetUpTest(c *C) {
+	SetupBech32Prefix()
 	broadcast := make(chan *messages.BroadcastMsgChan)
 	conf := TssConfig{}
 	sk := secp256k1.GenPrivKey()
@@ -35,8 +38,10 @@ func (t *tssHelpSuite) SetUpTest(c *C) {
 	p3, err := peer.Decode(testPeers[2])
 	c.Assert(err, IsNil)
 	tssCommon.lastUnicastPeer["testType"] = []peer.ID{p1, p2, p3}
-
-	partiesID, localPartyID, err := GetParties(testPubKeys[:], testPubKeys[0])
+	localTestPubKeys := testPubKeys[:]
+	sort.Strings(localTestPubKeys)
+	partiesID, localPartyID, err := GetParties(localTestPubKeys, testPubKeys[0])
+	c.Assert(err, IsNil)
 	partyIDMap := SetupPartyIDMap(partiesID)
 	err = SetupIDMaps(partyIDMap, tssCommon.PartyIDtoP2PID)
 	outCh := make(chan btss.Message, len(partiesID))
@@ -51,50 +56,68 @@ func (t *tssHelpSuite) SetUpTest(c *C) {
 	t.tssCommon = tssCommon
 }
 
-func (t *tssHelpSuite) TestGetUnicastBlame(c *C) {
-	blame, err := t.tssCommon.GetUnicastBlame("testTypeWrong")
+func (t *tssHelpSuite) TestGetHashToBroadcast(c *C) {
+	testMap := make(map[string]string)
+	val, freq, err := getHighestFreq(testMap)
 	c.Assert(err, NotNil)
-	blame, err = t.tssCommon.GetUnicastBlame("testType")
+	val, freq, err = getHighestFreq(nil)
+	c.Assert(err, NotNil)
+	testMap["1"] = "aa"
+	testMap["2"] = "aa"
+	testMap["3"] = "aa"
+	testMap["4"] = "ab"
+	testMap["5"] = "bb"
+	testMap["6"] = "bb"
+	testMap["7"] = "bc"
+	testMap["8"] = "cd"
+	val, freq, err = getHighestFreq(testMap)
 	c.Assert(err, IsNil)
-	c.Assert(blame[0], Equals, testPubKeys[3])
+	c.Assert(val, Equals, "aa")
+	c.Assert(freq, Equals, 3)
+}
+
+func (t *tssHelpSuite) TestGetUnicastBlame(c *C) {
+	_, err := t.tssCommon.GetUnicastBlame("testTypeWrong")
+	c.Assert(err, NotNil)
+	_, err = t.tssCommon.GetUnicastBlame("testType")
+	c.Assert(err, IsNil)
 }
 
 func (t *tssHelpSuite) TestMsgSignAndVerification(c *C) {
 	msg := []byte("hello")
 	msgID := "123"
 	sk := secp256k1.GenPrivKey()
-	sig, err := generateSignature(nil, "", sk)
-	c.Assert(err, IsNil)
-	sk2 := sk
-	sk2[2] = 32
-	sig, err = generateSignature(msg, msgID, sk)
-	c.Assert(err, IsNil)
-	sig2, err := generateSignature(msg, msgID, sk2)
+	sig, err := generateSignature(msg, msgID, sk)
 	c.Assert(err, IsNil)
 	ret := verifySignature(sk.PubKey(), msg, sig, msgID)
 	c.Assert(ret, Equals, true)
-	ret = verifySignature(sk.PubKey(), msg, sig2, msgID)
-	c.Assert(ret, Equals, false)
 }
 
 func (t *tssHelpSuite) TestBroadcastBlame(c *C) {
-	c1 := NewLocalCacheItem(nil, "hash123")
-	t.tssCommon.unConfirmedMessages["round1"] = c1
-	blames, err := t.tssCommon.GetBroadcastBlame("round1")
-	c.Assert(err, IsNil)
-	c.Assert(blames, HasLen, 3)
+	pi := t.tssCommon.getPartyInfo()
 
+	r1 := btss.MessageRouting{
+		From:                    pi.PartyIDMap["1"],
+		To:                      nil,
+		IsBroadcast:             false,
+		IsToOldCommittee:        false,
+		IsToOldAndNewCommittees: false,
+	}
 	msg := messages.WireMessage{
-		Routing:   nil,
-		RoundInfo: "round2",
+		Routing:   &r1,
+		RoundInfo: "key1",
 		Message:   nil,
 	}
-	c2 := NewLocalCacheItem(&msg, "hash123")
-	c2.ConfirmedList[testPeers[0]] = "123"
-	c2.ConfirmedList[testPeers[1]] = "123"
-	t.tssCommon.unConfirmedMessages["round2fromnode1"] = c2
-	blames, err = t.tssCommon.GetBroadcastBlame("round2")
+
+	t.tssCommon.msgStored.storeTssMsg("key1", &msg)
+	blames, err := t.tssCommon.GetBroadcastBlame("key1")
 	c.Assert(err, IsNil)
-	c.Assert(blames, HasLen, 1)
-	c.Assert(blames[0], Equals, testPubKeys[3])
+	var blamePubKeys []string
+	for _, el := range blames {
+		blamePubKeys = append(blamePubKeys, el.Pubkey)
+	}
+	sort.Strings(blamePubKeys)
+	expected := testPubKeys[2:]
+	sort.Strings(expected)
+	c.Assert(blamePubKeys, DeepEquals, expected)
 }

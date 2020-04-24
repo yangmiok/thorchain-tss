@@ -243,7 +243,7 @@ func (s *FourNodeTestSuite) TestBlame(c *C) {
 		c.Assert(item.PubKey, Equals, "")
 		c.Assert(item.Status, Equals, common.Fail)
 		c.Assert(item.Blame.BlameNodes, HasLen, 1)
-		c.Assert(item.Blame.BlameNodes[0], Equals, expectedFailNode)
+		c.Assert(item.Blame.BlameNodes[0].Pubkey, Equals, expectedFailNode)
 	}
 }
 

@@ -8,7 +8,7 @@ import (
 	bc "github.com/binance-chain/tss-lib/common"
 	. "gopkg.in/check.v1"
 
-	"gitlab.com/thorchain/tss/go-tss"
+	go_tss "gitlab.com/thorchain/tss/go-tss"
 	"gitlab.com/thorchain/tss/go-tss/common"
 )
 

@@ -54,7 +54,6 @@ func (t *TssTestSuite) SetUpSuite(c *C) {
 	copy(keyBytesArray[:], rawBytes[:32])
 	priKey := secp256k1.PrivKeySecp256k1(keyBytesArray)
 	t.privKey = priKey
-
 }
 
 func initLog(level string, pretty bool) {
@@ -154,13 +153,13 @@ func fabricateTssMsg(c *C, privKey tcrypto.PrivKey, partyID *btss.PartyID, round
 	dataForSign.WriteString(msgID)
 	sig, err := privKey.Sign(dataForSign.Bytes())
 	c.Assert(err, IsNil)
-
 	wiredMessage := messages.WireMessage{
 		Routing:   &routingInfo,
 		RoundInfo: roundInfo,
 		Message:   []byte(msg),
 		Sig:       sig,
 	}
+
 	marshaledMsg, err := json.Marshal(wiredMessage)
 	c.Assert(err, IsNil)
 	wrappedMsg := messages.WrappedMessage{
@@ -193,32 +192,24 @@ func senderIDtoPubKey(senderID *btss.PartyID) (string, error) {
 	return blamedPubKey, err
 }
 
-func (t *TssTestSuite) testVerMsgDuplication(c *C, privkey tcrypto.PrivKey, tssCommonStruct *TssCommon, senderID *btss.PartyID, partiesID []*btss.PartyID) {
+func (t *TssTestSuite) testVerMsgDuplication(c *C, privKey tcrypto.PrivKey, tssCommonStruct *TssCommon, senderID *btss.PartyID, partiesID []*btss.PartyID) {
 	testMsg := "testVerMsgDuplication"
 	roundInfo := "round testVerMsgDuplication"
-	msgHash, err := BytesToHashString([]byte(testMsg))
-	c.Assert(err, IsNil)
+	tssCommonStruct.msgID = "123"
 	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
-	wrappedMsg := fabricateTssMsg(c, privkey, senderID, roundInfo, testMsg, tssCommonStruct.msgID)
-	// you can pass any p2pID in Tss message
-	err = tssCommonStruct.ProcessOneMessage(wrappedMsg, senderID.Id)
+	wrappedMsg := fabricateTssMsg(c, privKey, senderID, roundInfo, testMsg, tssCommonStruct.msgID)
+	err := tssCommonStruct.ProcessOneMessage(wrappedMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[1].Id].String())
 	c.Assert(err, IsNil)
 	localItem := tssCommonStruct.TryGetLocalCacheItem(msgKey)
 	c.Assert(localItem.ConfirmedList, HasLen, 1)
-	// we send the verify message from the the same sender, Tss should only accept the first verify message
-	wrappedMsg = fabricateVerMsg(c, msgHash, msgKey)
-	for i := 0; i < 2; i++ {
-		err := tssCommonStruct.ProcessOneMessage(wrappedMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[1].Id].String())
-		c.Assert(err, IsNil)
-		c.Assert(localItem.ConfirmedList, HasLen, 2)
-	}
+	err = tssCommonStruct.ProcessOneMessage(wrappedMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[1].Id].String())
+	c.Assert(err, IsNil)
+	c.Assert(localItem.ConfirmedList, HasLen, 1)
 }
 
-func setupProcessVerMsgEnv(c *C, keyPool []string, partyNum int) (*TssCommon, []*btss.PartyID, []*btss.PartyID) {
+func setupProcessVerMsgEnv(c *C, privKey tcrypto.PrivKey, keyPool []string, partyNum int) (*TssCommon, []*btss.PartyID, []*btss.PartyID) {
 	conf := TssConfig{}
-	// keySignInstance := keysign.NewTssKeySign("", "", conf, sk, nil, nil, nil)
-	tssCommonStruct := NewTssCommon("", nil, conf, "test", nil)
-	// tssCommonStruct := keySignInstance.GetTssCommonStruct()
+	tssCommonStruct := NewTssCommon("", nil, conf, "test", privKey)
 	localTestPubKeys := make([]string, partyNum)
 	copy(localTestPubKeys, keyPool[:partyNum])
 	// for the test, we choose the first pubic key as the test instance public key
@@ -243,7 +234,7 @@ func setupProcessVerMsgEnv(c *C, keyPool []string, partyNum int) (*TssCommon, []
 	return tssCommonStruct, peerPartiesID, partiesID
 }
 
-func (t *TssTestSuite) testDropMsgOwner(c *C, privkey tcrypto.PrivKey, tssCommonStruct *TssCommon, senderID *btss.PartyID, peerPartiesID []*btss.PartyID) {
+func (t *TssTestSuite) testDropMsgOwner(c *C, privKey tcrypto.PrivKey, tssCommonStruct *TssCommon, senderID *btss.PartyID, peerPartiesID []*btss.PartyID) {
 	// clean up the blamepeer list for each test
 	defer func() {
 		tssCommonStruct.BlamePeers = NoBlame
@@ -253,9 +244,12 @@ func (t *TssTestSuite) testDropMsgOwner(c *C, privkey tcrypto.PrivKey, tssCommon
 	msgHash, err := BytesToHashString([]byte(testMsg))
 	c.Assert(err, IsNil)
 	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
-	senderMsg := fabricateTssMsg(c, privkey, senderID, roundInfo, testMsg, tssCommonStruct.msgID)
+	senderMsg := fabricateTssMsg(c, privKey, senderID, roundInfo, testMsg, "123")
+
+	senderPeer, err := getPeerIDFromPartyID(senderID)
+	c.Assert(err, IsNil)
 	// you can pass any p2pID in Tss message
-	err = tssCommonStruct.ProcessOneMessage(senderMsg, tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())
+	err = tssCommonStruct.ProcessOneMessage(senderMsg, senderPeer.String())
 	c.Assert(err, IsNil)
 	localItem := tssCommonStruct.TryGetLocalCacheItem(msgKey)
 	c.Assert(localItem.ConfirmedList, HasLen, 1)
@@ -270,9 +264,7 @@ func (t *TssTestSuite) testDropMsgOwner(c *C, privkey tcrypto.PrivKey, tssCommon
 		c.Assert(localItem.ConfirmedList, HasLen, i+1)
 	}
 	// the data owner's message should be raise an error
-
-	//tssCommonStruct.SetLocalPeerID(tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())
-	//err = tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())
+	err = tssCommonStruct.ProcessOneMessage(senderMsg, senderPeer.String())
 	c.Assert(err, Equals, ErrHashFromOwner)
 	c.Assert(tssCommonStruct.BlamePeers.FailReason, Equals, BlameHashCheck)
 	blamedPubKey, err := senderIDtoPubKey(senderID)
@@ -280,13 +272,13 @@ func (t *TssTestSuite) testDropMsgOwner(c *C, privkey tcrypto.PrivKey, tssCommon
 	c.Assert(tssCommonStruct.BlamePeers.BlameNodes, DeepEquals, []string{blamedPubKey})
 }
 
-func (t *TssTestSuite) testVerMsgAndUpdate(c *C, privkey tcrypto.PrivKey, tssCommonStruct *TssCommon, senderID *btss.PartyID, partiesID []*btss.PartyID) {
+func (t *TssTestSuite) testVerMsgAndUpdate(c *C, tssCommonStruct *TssCommon, senderID *btss.PartyID, partiesID []*btss.PartyID) {
 	testMsg := "testVerMsgAndUpdate"
 	roundInfo := "round testVerMsgAndUpdate"
 	msgHash, err := BytesToHashString([]byte(testMsg))
 	c.Assert(err, IsNil)
 	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
-	wrappedMsg := fabricateTssMsg(c, privkey, senderID, roundInfo, testMsg, tssCommonStruct.msgID)
+	wrappedMsg := fabricateTssMsg(c, t.privKey, senderID, roundInfo, testMsg, "123")
 	// you can pass any p2pID in Tss message
 	err = tssCommonStruct.ProcessOneMessage(wrappedMsg, tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())
 	c.Assert(err, IsNil)
@@ -295,12 +287,11 @@ func (t *TssTestSuite) testVerMsgAndUpdate(c *C, privkey tcrypto.PrivKey, tssCom
 
 	// we send the verify message from the the same sender, Tss should only accept the first verify message
 	wrappedVerMsg := fabricateVerMsg(c, msgHash, msgKey)
-	err = tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[0].Id].String())
-	c.Assert(err, IsNil)
+	err = tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[1].Id].String())
 	c.Assert(localItem.ConfirmedList, HasLen, 2)
 	// this error message indicates the message share is accepted by the this system.
-	err = tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[1].Id].String())
-	//c.Assert(tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[2].Id].String()), ErrorMatches, "fail to update the message to local party: fail to set bytes to local party: task , party <nil>, round -1: proto: can't skip unknown wire type 4")
+	err = tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[0].Id].String())
+	c.Assert(err, ErrorMatches, "fail to update the message to local party: fail to set bytes to local party: task , party <nil>, round -1: proto: can't skip unknown wire type 4")
 }
 
 func (t *TssTestSuite) testVerMsgWrongHash(c *C, tssCommonStruct *TssCommon, senderID *btss.PartyID, peerParties []*btss.PartyID, testParties TestParties, senderMsg *messages.WrappedMessage, peerMsgMap map[int]*messages.WrappedMessage, msgKey string, blameOwner bool) {
@@ -344,7 +335,8 @@ func (t *TssTestSuite) testVerMsgWrongHash(c *C, tssCommonStruct *TssCommon, sen
 				expected = append(expected, pubKey)
 			}
 		}
-		sort.Strings(tssCommonStruct.BlamePeers.BlameNodes)
+
+		// sort.Strings(tssCommonStruct.BlamePeers.BlameNodes)
 		sort.Strings(expected)
 		c.Assert(tssCommonStruct.BlamePeers.BlameNodes, DeepEquals, expected)
 	}
@@ -364,8 +356,8 @@ func findSender(arr []*btss.PartyID) *btss.PartyID {
 
 // TestProcessVerMessage is the tests for processing the verified message
 func (t *TssTestSuite) TestProcessVerMessage(c *C) {
-	tssCommonStruct, peerPartiesID, partiesID := setupProcessVerMsgEnv(c, testBlamePubKeys, 4)
+	tssCommonStruct, peerPartiesID, partiesID := setupProcessVerMsgEnv(c, t.privKey, testBlamePubKeys, 4)
 	sender := findSender(partiesID)
 	t.testVerMsgDuplication(c, t.privKey, tssCommonStruct, sender, peerPartiesID)
-	t.testVerMsgAndUpdate(c, t.privKey, tssCommonStruct, sender, partiesID)
+	t.testVerMsgAndUpdate(c, tssCommonStruct, sender, partiesID)
 }
