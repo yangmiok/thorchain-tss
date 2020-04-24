@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/binance-chain/tss-lib/crypto"
+	bcrypto "github.com/binance-chain/tss-lib/crypto"
 	bkg "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/rs/zerolog"
@@ -63,7 +63,7 @@ func (tKeyGen *TssKeyGen) GetTssCommonStruct() *common.TssCommon {
 	return tKeyGen.tssCommonStruct
 }
 
-func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq Request) (*crypto.ECPoint, error) {
+func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq Request) (*bcrypto.ECPoint, error) {
 	partiesID, localPartyID, err := common.GetParties(keygenReq.Keys, tKeyGen.localNodePubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get keygen parties: %w", err)
@@ -121,9 +121,9 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq Request) (*crypto.ECPoint, er
 	select {
 	case <-time.After(time.Second * 5):
 		close(tKeyGen.commStopChan)
-		break
+
 	case <-tKeyGen.tssCommonStruct.GetTaskDone():
-		break
+		close(tKeyGen.commStopChan)
 	}
 
 	keyGenWg.Wait()
@@ -133,7 +133,7 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq Request) (*crypto.ECPoint, er
 func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 	outCh <-chan btss.Message,
 	endCh <-chan bkg.LocalPartySaveData,
-	keyGenLocalStateItem storage.KeygenLocalState) (*crypto.ECPoint, error) {
+	keyGenLocalStateItem storage.KeygenLocalState) (*bcrypto.ECPoint, error) {
 	defer tKeyGen.logger.Info().Msg("finished keygen process")
 	tKeyGen.logger.Info().Msg("start to read messages from local party")
 	tssConf := tKeyGen.tssCommonStruct.GetConf()
@@ -152,30 +152,33 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			tssCommonStruct := tKeyGen.GetTssCommonStruct()
 
 			lastMsg := tKeyGen.lastMsg
-			var blamePeers []common.BlameNode
+			if lastMsg == nil {
+				tKeyGen.logger.Error().Msg("fail to start the keygen, the last produced message of this node is none")
+				return nil, errors.New("timeout before shared message is generated")
+			}
+			var blameNodes []common.BlameNode
 			var err error
 			if lastMsg.IsBroadcast() == false {
-				blamePeers, err = tssCommonStruct.GetUnicastBlame(lastMsg.Type())
+				blameNodes, err = tssCommonStruct.GetUnicastBlame(lastMsg.Type())
 				if err != nil {
 					tKeyGen.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
 			} else {
-				blamePeers, err = tssCommonStruct.GetBroadcastBlame(lastMsg.Type())
+				blameNodes, err = tssCommonStruct.GetBroadcastBlame(lastMsg.Type())
 				if err != nil {
 					tKeyGen.logger.Error().Err(err).Msg("error in get broadcast blame")
 				}
 			}
 
-			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blamePeers)
+			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blameNodes)
 			return nil, common.ErrTssTimeOut
 
 		case msg := <-outCh:
 			tKeyGen.logger.Debug().Msgf(">>>>>>>>>>msg: %s", msg.String())
-			// for the sake of performance, we do not lock the status update
-			// we report a rough status of current round
 			tKeyGen.lastMsg = msg
 			err := tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg)
 			if err != nil {
+				tKeyGen.logger.Error().Err(err).Msg("fail to process the message")
 				return nil, err
 			}
 

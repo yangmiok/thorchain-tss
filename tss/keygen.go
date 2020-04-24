@@ -60,9 +60,11 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 	keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 	t.p2pCommunication.SetSubscribe(messages.TSSKeyGenMsg, msgID, keygenMsgChannel)
 	t.p2pCommunication.SetSubscribe(messages.TSSKeyGenVerMsg, msgID, keygenMsgChannel)
+	t.p2pCommunication.SetSubscribe(messages.TSSControlMsg, msgID, keygenMsgChannel)
 
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenMsg, msgID)
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenVerMsg, msgID)
+	defer t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, msgID)
 	onlinePeers, err := t.joinParty(msgID, req.Keys)
 	if err != nil {
 		if onlinePeers == nil {

@@ -41,6 +41,7 @@ func (t *tssHelpSuite) SetUpTest(c *C) {
 	localTestPubKeys := testPubKeys[:]
 	sort.Strings(localTestPubKeys)
 	partiesID, localPartyID, err := GetParties(localTestPubKeys, testPubKeys[0])
+	c.Assert(err, IsNil)
 	partyIDMap := SetupPartyIDMap(partiesID)
 	err = SetupIDMaps(partyIDMap, tssCommon.PartyIDtoP2PID)
 	outCh := make(chan btss.Message, len(partiesID))
@@ -55,6 +56,26 @@ func (t *tssHelpSuite) SetUpTest(c *C) {
 	t.tssCommon = tssCommon
 }
 
+func (t *tssHelpSuite) TestGetHashToBroadcast(c *C) {
+	testMap := make(map[string]string)
+	val, freq, err := getHighestFreq(testMap)
+	c.Assert(err, NotNil)
+	val, freq, err = getHighestFreq(nil)
+	c.Assert(err, NotNil)
+	testMap["1"] = "aa"
+	testMap["2"] = "aa"
+	testMap["3"] = "aa"
+	testMap["4"] = "ab"
+	testMap["5"] = "bb"
+	testMap["6"] = "bb"
+	testMap["7"] = "bc"
+	testMap["8"] = "cd"
+	val, freq, err = getHighestFreq(testMap)
+	c.Assert(err, IsNil)
+	c.Assert(val, Equals, "aa")
+	c.Assert(freq, Equals, 3)
+}
+
 func (t *tssHelpSuite) TestGetUnicastBlame(c *C) {
 	_, err := t.tssCommon.GetUnicastBlame("testTypeWrong")
 	c.Assert(err, NotNil)
@@ -66,18 +87,10 @@ func (t *tssHelpSuite) TestMsgSignAndVerification(c *C) {
 	msg := []byte("hello")
 	msgID := "123"
 	sk := secp256k1.GenPrivKey()
-	sig, err := generateSignature(nil, "", sk)
-	c.Assert(err, IsNil)
-	sk2 := sk
-	sk2[2] = 32
-	sig, err = generateSignature(msg, msgID, sk)
-	c.Assert(err, IsNil)
-	sig2, err := generateSignature(msg, msgID, sk2)
+	sig, err := generateSignature(msg, msgID, sk)
 	c.Assert(err, IsNil)
 	ret := verifySignature(sk.PubKey(), msg, sig, msgID)
 	c.Assert(ret, Equals, true)
-	ret = verifySignature(sk.PubKey(), msg, sig2, msgID)
-	c.Assert(ret, Equals, false)
 }
 
 func (t *tssHelpSuite) TestBroadcastBlame(c *C) {

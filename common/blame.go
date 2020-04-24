@@ -63,6 +63,13 @@ func (b *Blame) SetBlame(reason string, nodes []BlameNode) {
 	b.BlameNodes = append(b.BlameNodes, nodes...)
 }
 
+func (b *Blame) AlreadyBlame() bool {
+	if len(b.BlameNodes) != 0 {
+		return true
+	}
+	return false
+}
+
 // AddBlameNodes add nodes to the blame list
 func (b *Blame) AddBlameNodes(newBlameNodes ...BlameNode) {
 	for _, node := range newBlameNodes {
