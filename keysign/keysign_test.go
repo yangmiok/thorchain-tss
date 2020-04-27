@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"gitlab.com/thorchain/tss/go-tss/conversion"
+
 	bc "github.com/binance-chain/tss-lib/common"
 	"github.com/libp2p/go-libp2p-core/peer"
 	maddr "github.com/multiformats/go-multiaddr"
@@ -87,7 +89,7 @@ type TssKeysisgnTestSuite struct {
 var _ = Suite(&TssKeysisgnTestSuite{})
 
 func (s *TssKeysisgnTestSuite) SetUpSuite(c *C) {
-	common.SetupBech32Prefix()
+	conversion.SetupBech32Prefix()
 	common.InitLog("info", true, "keysign_test")
 
 	for _, el := range testNodePrivkey {
@@ -178,13 +180,16 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 				stopChan, messageID,
 				s.nodePrivKeys[idx])
 			keysignMsgChannel := keysignIns.GetTssKeySignChannels()
+
 			comm.SetSubscribe(messages.TSSKeySignMsg, messageID, keysignMsgChannel)
 			comm.SetSubscribe(messages.TSSKeySignVerMsg, messageID, keysignMsgChannel)
 			comm.SetSubscribe(messages.TSSControlMsg, messageID, keysignMsgChannel)
-
+			comm.SetSubscribe(messages.TSSTaskDone, messageID, keysignMsgChannel)
 			defer comm.CancelSubscribe(messages.TSSKeySignMsg, messageID)
 			defer comm.CancelSubscribe(messages.TSSKeySignVerMsg, messageID)
 			defer comm.CancelSubscribe(messages.TSSControlMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSTaskDone, messageID)
+
 			localState, err := s.stateMgrs[idx].GetLocalState(req.PoolPubKey)
 			c.Assert(err, IsNil)
 			sig, err := keysignIns.SignMessage([]byte(req.Message), localState, req.SignerPubKeys)
@@ -256,10 +261,16 @@ func (s *TssKeysisgnTestSuite) TestSignMessageWithStop(c *C) {
 				stopChan, messageID,
 				s.nodePrivKeys[idx])
 			keysignMsgChannel := keysignIns.GetTssKeySignChannels()
+
 			comm.SetSubscribe(messages.TSSKeySignMsg, messageID, keysignMsgChannel)
 			comm.SetSubscribe(messages.TSSKeySignVerMsg, messageID, keysignMsgChannel)
+			comm.SetSubscribe(messages.TSSControlMsg, messageID, keysignMsgChannel)
+			comm.SetSubscribe(messages.TSSTaskDone, messageID, keysignMsgChannel)
 			defer comm.CancelSubscribe(messages.TSSKeySignMsg, messageID)
 			defer comm.CancelSubscribe(messages.TSSKeySignVerMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSControlMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSTaskDone, messageID)
+
 			localState, err := s.stateMgrs[idx].GetLocalState(req.PoolPubKey)
 			c.Assert(err, IsNil)
 			if idx == 1 {
@@ -269,7 +280,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessageWithStop(c *C) {
 			c.Assert(err, NotNil)
 			// we skip the node 1 as we force it to stop
 			if idx != 1 {
-				blames := keysignIns.GetTssCommonStruct().BlamePeers.BlameNodes
+				blames := keysignIns.GetTssCommonStruct().GetBlameMgr().GetBlame().BlameNodes
 				c.Assert(blames, HasLen, 1)
 				c.Assert(blames[0].Pubkey, Equals, testPubKeys[1])
 			}
@@ -330,12 +341,16 @@ func (s *TssKeysisgnTestSuite) TestSignMessageRejectOnePeer(c *C) {
 				comm.BroadcastMsgChan,
 				stopChan, messageID, s.nodePrivKeys[idx])
 			keysignMsgChannel := keysignIns.GetTssKeySignChannels()
+
 			comm.SetSubscribe(messages.TSSKeySignMsg, messageID, keysignMsgChannel)
 			comm.SetSubscribe(messages.TSSKeySignVerMsg, messageID, keysignMsgChannel)
 			comm.SetSubscribe(messages.TSSControlMsg, messageID, keysignMsgChannel)
+			comm.SetSubscribe(messages.TSSTaskDone, messageID, keysignMsgChannel)
 			defer comm.CancelSubscribe(messages.TSSKeySignMsg, messageID)
 			defer comm.CancelSubscribe(messages.TSSKeySignVerMsg, messageID)
 			defer comm.CancelSubscribe(messages.TSSControlMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSTaskDone, messageID)
+
 			localState, err := s.stateMgrs[idx].GetLocalState(req.PoolPubKey)
 			c.Assert(err, IsNil)
 			if idx == 1 {

@@ -11,7 +11,7 @@ import (
 
 	bcrypto "github.com/binance-chain/tss-lib/crypto"
 
-	go_tss "gitlab.com/thorchain/tss/go-tss"
+	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/messages"
 	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
@@ -23,7 +23,7 @@ var _ = Suite(&TssCommonTestSuite{})
 func (TssCommonTestSuite) TestTssCommon(c *C) {
 	pk, err := sdk.GetAccPubKeyBech32("thorpub1addwnpepqtdklw8tf3anjz7nn5fly3uvq2e67w2apn560s4smmrt9e3x52nt2svmmu3")
 	c.Assert(err, IsNil)
-	peerID, err := go_tss.GetPeerIDFromSecp256PubKey(pk.(secp256k1.PubKeySecp256k1))
+	peerID, err := conversion.GetPeerIDFromSecp256PubKey(pk.(secp256k1.PubKeySecp256k1))
 	c.Assert(err, IsNil)
 	broadcastChannel := make(chan *messages.BroadcastMsgChan)
 	sk := secp256k1.GenPrivKey()
@@ -59,7 +59,7 @@ func (TssCommonTestSuite) TestGetTssPubKey(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(pk, Equals, "")
 	c.Assert(addr.Bytes(), HasLen, 0)
-	SetupBech32Prefix()
+	conversion.SetupBech32Prefix()
 	var p bcrypto.ECPoint
 	c.Assert(json.Unmarshal([]byte(`{"Coords":[70074650318631491136896111706876206496089700125696166275258483716815143842813,72125378038650252881868972131323661098816214918201601489154946637636730727892]}`), &p), IsNil)
 	pk, addr, err = GetTssPubKey(&p)

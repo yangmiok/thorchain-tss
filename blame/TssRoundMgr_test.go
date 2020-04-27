@@ -1,4 +1,4 @@
-package common
+package blame
 
 import (
 	. "gopkg.in/check.v1"
@@ -6,20 +6,19 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/messages"
 )
 
-type ShareMgrSuite struct{}
+type RoundMgrSuite struct{}
 
-var _ = Suite(&ShareMgrSuite{})
+var _ = Suite(&RoundMgrSuite{})
 
-func (ShareMgrSuite) TestNewTssMsgStored(c *C) {
-	msgmrg := NewTssShareMgr()
+func (ShareMgrSuite) TestTssRoundMgr(c *C) {
+	mgr := NewTssRoundMgr()
 	w1 := messages.WireMessage{
 		Routing:   nil,
 		RoundInfo: "test1",
 		Message:   nil,
 		Sig:       nil,
 	}
-
-	msgmrg.storeTssMsg("test1", &w1)
+	mgr.StoreTssRound("test1", &w1)
 	w2 := messages.WireMessage{
 		Routing:   nil,
 		RoundInfo: "test2",
@@ -27,17 +26,17 @@ func (ShareMgrSuite) TestNewTssMsgStored(c *C) {
 		Sig:       nil,
 	}
 
-	msgmrg.storeTssMsg("test2", &w2)
+	mgr.StoreTssRound("test2", &w2)
 	w3 := messages.WireMessage{
 		Routing:   nil,
 		RoundInfo: "test3",
 		Message:   nil,
 		Sig:       nil,
 	}
-	msgmrg.storeTssMsg("test3", &w3)
-	ret := msgmrg.getTssMsgStored("test4")
+	mgr.StoreTssRound("test3", &w3)
+	ret := mgr.GetTssRoundStored("test4")
 	c.Assert(ret, IsNil)
 
-	ret = msgmrg.getTssMsgStored("test2")
+	ret = mgr.GetTssRoundStored("test2")
 	c.Assert(ret.RoundInfo, Equals, "test2")
 }

@@ -1,4 +1,4 @@
-package common
+package blame
 
 import (
 	"bytes"
@@ -6,38 +6,23 @@ import (
 	"strings"
 )
 
-// NoBlame is empty blame struct
-var NoBlame = Blame{}
-
-type BlameNode struct {
-	Pubkey         string `json:"pubkey"`
-	BlameData      []byte `json:"data"`
-	BlameSignature []byte `json:"signature"`
-}
-
-func NewBlameNode(pk string, blameData, blameSig []byte) BlameNode {
-	return BlameNode{
+func NewBlameNode(pk string, blameData, blameSig []byte) Node {
+	return Node{
 		Pubkey:         pk,
 		BlameData:      blameData,
 		BlameSignature: blameSig,
 	}
 }
 
-func (bn *BlameNode) Equal(node BlameNode) bool {
+func (bn *Node) Equal(node Node) bool {
 	if bn.Pubkey == node.Pubkey && bytes.Equal(bn.BlameSignature, node.BlameSignature) {
 		return true
 	}
 	return false
 }
 
-// Blame is used to store the blame nodes and the fail reason
-type Blame struct {
-	FailReason string      `json:"fail_reason"`
-	BlameNodes []BlameNode `json:"blame_peers,omitempty"`
-}
-
 // NewBlame create a new instance of Blame
-func NewBlame(reason string, blameNodes []BlameNode) Blame {
+func NewBlame(reason string, blameNodes []Node) Blame {
 	return Blame{
 		FailReason: reason,
 		BlameNodes: blameNodes,
@@ -58,7 +43,7 @@ func (b Blame) String() string {
 }
 
 // SetBlame update the field values of Blame
-func (b *Blame) SetBlame(reason string, nodes []BlameNode) {
+func (b *Blame) SetBlame(reason string, nodes []Node) {
 	b.FailReason = reason
 	b.BlameNodes = append(b.BlameNodes, nodes...)
 }
@@ -71,7 +56,7 @@ func (b *Blame) AlreadyBlame() bool {
 }
 
 // AddBlameNodes add nodes to the blame list
-func (b *Blame) AddBlameNodes(newBlameNodes ...BlameNode) {
+func (b *Blame) AddBlameNodes(newBlameNodes ...Node) {
 	for _, node := range newBlameNodes {
 		found := false
 		for _, el := range b.BlameNodes {

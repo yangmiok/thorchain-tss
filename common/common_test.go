@@ -20,6 +20,8 @@ import (
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/tss/go-tss/blame"
+	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/messages"
 )
 
@@ -45,7 +47,7 @@ var _ = Suite(&TssTestSuite{})
 
 func (t *TssTestSuite) SetUpSuite(c *C) {
 	InitLog("info", true, "tss_common_test")
-	SetupBech32Prefix()
+	conversion.SetupBech32Prefix()
 	priHexBytes, err := base64.StdEncoding.DecodeString(testBlamePrivKey)
 	c.Assert(err, IsNil)
 	rawBytes, err := hex.DecodeString(string(priHexBytes))
@@ -120,7 +122,7 @@ func (t *TssTestSuite) TestTssProcessOutCh(c *C) {
 	conf := TssConfig{}
 	localTestPubKeys := make([]string, len(testPubKeys))
 	copy(localTestPubKeys, testPubKeys[:])
-	partiesID, localPartyID, err := GetParties(localTestPubKeys, testPubKeys[0])
+	partiesID, localPartyID, err := conversion.GetParties(localTestPubKeys, testPubKeys[0])
 	c.Assert(err, IsNil)
 	messageRouting := btss.MessageRouting{
 		From:                    localPartyID,
@@ -213,10 +215,10 @@ func setupProcessVerMsgEnv(c *C, privKey tcrypto.PrivKey, keyPool []string, part
 	localTestPubKeys := make([]string, partyNum)
 	copy(localTestPubKeys, keyPool[:partyNum])
 	// for the test, we choose the first pubic key as the test instance public key
-	partiesID, localPartyID, err := GetParties(localTestPubKeys, keyPool[0])
+	partiesID, localPartyID, err := conversion.GetParties(localTestPubKeys, keyPool[0])
 	c.Assert(err, IsNil)
-	partyIDMap := SetupPartyIDMap(partiesID)
-	SetupIDMaps(partyIDMap, tssCommonStruct.PartyIDtoP2PID)
+	partyIDMap := conversion.SetupPartyIDMap(partiesID)
+	conversion.SetupIDMaps(partyIDMap, tssCommonStruct.PartyIDtoP2PID)
 	ctx := btss.NewPeerContext(partiesID)
 	params := btss.NewParameters(ctx, localPartyID, len(partiesID), 2)
 	outCh := make(chan btss.Message, len(partiesID))
@@ -226,19 +228,18 @@ func setupProcessVerMsgEnv(c *C, privKey tcrypto.PrivKey, keyPool []string, part
 		Party:      keyGenParty,
 		PartyIDMap: partyIDMap,
 	})
-	tssCommonStruct.SetLocalPeerID("fakeID")
-	err = SetupIDMaps(partyIDMap, tssCommonStruct.PartyIDtoP2PID)
+	err = conversion.SetupIDMaps(partyIDMap, tssCommonStruct.blameMgr.PartyIDtoP2PID)
 	c.Assert(err, IsNil)
+	tssCommonStruct.SetLocalPeerID("fakeID")
+	err = conversion.SetupIDMaps(partyIDMap, tssCommonStruct.PartyIDtoP2PID)
+	c.Assert(err, IsNil)
+	tssCommonStruct.blameMgr.SetPartyInfo(keyGenParty, partyIDMap)
 	peerPartiesID := append(partiesID[:localPartyID.Index], partiesID[localPartyID.Index+1:]...)
-	tssCommonStruct.P2PPeers = GetPeersID(tssCommonStruct.PartyIDtoP2PID, tssCommonStruct.GetLocalPeerID())
+	tssCommonStruct.P2PPeers = conversion.GetPeersID(tssCommonStruct.PartyIDtoP2PID, tssCommonStruct.GetLocalPeerID())
 	return tssCommonStruct, peerPartiesID, partiesID
 }
 
 func (t *TssTestSuite) testDropMsgOwner(c *C, privKey tcrypto.PrivKey, tssCommonStruct *TssCommon, senderID *btss.PartyID, peerPartiesID []*btss.PartyID) {
-	// clean up the blamepeer list for each test
-	defer func() {
-		tssCommonStruct.BlamePeers = NoBlame
-	}()
 	testMsg := "testDropMsgOwner"
 	roundInfo := "round testDropMsgOwner"
 	msgHash, err := BytesToHashString([]byte(testMsg))
@@ -246,7 +247,7 @@ func (t *TssTestSuite) testDropMsgOwner(c *C, privKey tcrypto.PrivKey, tssCommon
 	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
 	senderMsg := fabricateTssMsg(c, privKey, senderID, roundInfo, testMsg, "123")
 
-	senderPeer, err := getPeerIDFromPartyID(senderID)
+	senderPeer, err := conversion.GetPeerIDFromPartyID(senderID)
 	c.Assert(err, IsNil)
 	// you can pass any p2pID in Tss message
 	err = tssCommonStruct.ProcessOneMessage(senderMsg, senderPeer.String())
@@ -265,11 +266,11 @@ func (t *TssTestSuite) testDropMsgOwner(c *C, privKey tcrypto.PrivKey, tssCommon
 	}
 	// the data owner's message should be raise an error
 	err = tssCommonStruct.ProcessOneMessage(senderMsg, senderPeer.String())
-	c.Assert(err, Equals, ErrHashFromOwner)
-	c.Assert(tssCommonStruct.BlamePeers.FailReason, Equals, BlameHashCheck)
+	c.Assert(err, Equals, blame.ErrHashFromOwner)
+	c.Assert(tssCommonStruct.blameMgr.GetBlame().FailReason, Equals, blame.HashCheckFail)
 	blamedPubKey, err := senderIDtoPubKey(senderID)
 	c.Assert(err, IsNil)
-	c.Assert(tssCommonStruct.BlamePeers.BlameNodes, DeepEquals, []string{blamedPubKey})
+	c.Assert(tssCommonStruct.blameMgr.GetBlame().BlameNodes, DeepEquals, []string{blamedPubKey})
 }
 
 func (t *TssTestSuite) testVerMsgAndUpdate(c *C, tssCommonStruct *TssCommon, senderID *btss.PartyID, partiesID []*btss.PartyID) {
@@ -295,11 +296,6 @@ func (t *TssTestSuite) testVerMsgAndUpdate(c *C, tssCommonStruct *TssCommon, sen
 }
 
 func (t *TssTestSuite) testVerMsgWrongHash(c *C, tssCommonStruct *TssCommon, senderID *btss.PartyID, peerParties []*btss.PartyID, testParties TestParties, senderMsg *messages.WrappedMessage, peerMsgMap map[int]*messages.WrappedMessage, msgKey string, blameOwner bool) {
-	// clean up the blamepeer list for each test
-	defer func() {
-		tssCommonStruct.BlamePeers = NoBlame
-	}()
-
 	err := tssCommonStruct.ProcessOneMessage(senderMsg, senderID.Id)
 	c.Assert(err, IsNil)
 	localItem := tssCommonStruct.TryGetLocalCacheItem(msgKey)
@@ -338,7 +334,7 @@ func (t *TssTestSuite) testVerMsgWrongHash(c *C, tssCommonStruct *TssCommon, sen
 
 		// sort.Strings(tssCommonStruct.BlamePeers.BlameNodes)
 		sort.Strings(expected)
-		c.Assert(tssCommonStruct.BlamePeers.BlameNodes, DeepEquals, expected)
+		c.Assert(tssCommonStruct.blameMgr.GetBlame().BlameNodes, DeepEquals, expected)
 	}
 }
 

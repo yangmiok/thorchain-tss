@@ -1,4 +1,4 @@
-package common
+package blame
 
 import (
 	. "gopkg.in/check.v1"
@@ -8,8 +8,8 @@ type BlameTestSuite struct{}
 
 var _ = Suite(&BlameTestSuite{})
 
-func createNewNode(key string) BlameNode {
-	return BlameNode{
+func createNewNode(key string) Node {
+	return Node{
 		Pubkey:         key,
 		BlameData:      nil,
 		BlameSignature: nil,
@@ -17,7 +17,7 @@ func createNewNode(key string) BlameNode {
 }
 
 func (BlameTestSuite) TestBlame(c *C) {
-	b := NewBlame("whatever", []BlameNode{createNewNode("1"), createNewNode("2")})
+	b := NewBlame("whatever", []Node{createNewNode("1"), createNewNode("2")})
 	c.Assert(b.IsEmpty(), Equals, false)
 	c.Logf("%s", b)
 	b.AddBlameNodes(createNewNode("3"), createNewNode("4"))

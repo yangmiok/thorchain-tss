@@ -15,7 +15,9 @@ import (
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
 
+	"gitlab.com/thorchain/tss/go-tss/blame"
 	"gitlab.com/thorchain/tss/go-tss/common"
+	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/messages"
 	"gitlab.com/thorchain/tss/go-tss/p2p"
 	"gitlab.com/thorchain/tss/go-tss/storage"
@@ -57,7 +59,7 @@ func (tKeySign *TssKeySign) GetTssCommonStruct() *common.TssCommon {
 
 // signMessage
 func (tKeySign *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage.KeygenLocalState, parties []string) (*bc.SignatureData, error) {
-	partiesID, localPartyID, err := common.GetParties(parties, localStateItem.LocalPartyKey)
+	partiesID, localPartyID, err := conversion.GetParties(parties, localStateItem.LocalPartyKey)
 	tKeySign.localParty = localPartyID
 	if err != nil {
 		return nil, fmt.Errorf("fail to form key sign party: %w", err)
@@ -81,19 +83,23 @@ func (tKeySign *TssKeySign) SignMessage(msgToSign []byte, localStateItem storage
 	if err != nil {
 		return nil, fmt.Errorf("fail to convert msg to hash int: %w", err)
 	}
+	blameMgr := tKeySign.tssCommonStruct.GetBlameMgr()
 	keySignParty := signing.NewLocalParty(m, params, localStateItem.LocalData, outCh, endCh)
-	partyIDMap := common.SetupPartyIDMap(partiesID)
-	err = common.SetupIDMaps(partyIDMap, tKeySign.tssCommonStruct.PartyIDtoP2PID)
-	if err != nil {
+	partyIDMap := conversion.SetupPartyIDMap(partiesID)
+	err1 := conversion.SetupIDMaps(partyIDMap, tKeySign.tssCommonStruct.PartyIDtoP2PID)
+	err2 := conversion.SetupIDMaps(partyIDMap, blameMgr.PartyIDtoP2PID)
+	if err1 != nil || err2 != nil {
 		tKeySign.logger.Error().Msgf("error in creating mapping between partyID and P2P ID")
 		return nil, err
 	}
+
 	tKeySign.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
 		Party:      keySignParty,
 		PartyIDMap: partyIDMap,
 	})
 
-	tKeySign.tssCommonStruct.P2PPeers = common.GetPeersID(tKeySign.tssCommonStruct.PartyIDtoP2PID, tKeySign.tssCommonStruct.GetLocalPeerID())
+	blameMgr.SetPartyInfo(keySignParty, partyIDMap)
+	tKeySign.tssCommonStruct.P2PPeers = conversion.GetPeersID(tKeySign.tssCommonStruct.PartyIDtoP2PID, tKeySign.tssCommonStruct.GetLocalPeerID())
 	var keySignWg sync.WaitGroup
 	keySignWg.Add(2)
 	// start the key sign
@@ -145,23 +151,23 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 			tssCommonStruct := tKeySign.GetTssCommonStruct()
 			lastMsg := tKeySign.lastMsg
 
-			var blameNodes []common.BlameNode
+			var blameNodes []blame.Node
 			var err error
 			if lastMsg.IsBroadcast() == false {
-				blameNodes, err = tssCommonStruct.GetUnicastBlame(lastMsg.Type())
+				blameNodes, err = tssCommonStruct.GetBlameMgr().GetUnicastBlame(lastMsg.Type())
 				if err != nil {
 					tKeySign.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
 			} else {
-				if tssCommonStruct.BlamePeers.AlreadyBlame() == false {
-					blameNodes, err = tssCommonStruct.GetBroadcastBlame(lastMsg.Type())
+				if tssCommonStruct.GetBlameMgr().GetBlame().AlreadyBlame() == false {
+					blameNodes, err = tssCommonStruct.GetBlameMgr().GetBroadcastBlame(lastMsg.Type())
 					if err != nil {
 						tKeySign.logger.Error().Err(err).Msg("error in get broadcast blame")
 					}
 				}
 			}
-			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blameNodes)
-			return nil, common.ErrTssTimeOut
+			tssCommonStruct.GetBlameMgr().GetBlame().SetBlame(blame.TssTimeout, blameNodes)
+			return nil, blame.ErrTssTimeOut
 		case msg := <-outCh:
 			tKeySign.logger.Debug().Msgf(">>>>>>>>>>key sign msg: %s", msg.String())
 			tKeySign.lastMsg = msg
@@ -186,7 +192,7 @@ func (tKeySign *TssKeySign) WriteKeySignResult(w http.ResponseWriter, R, S strin
 		R:      R,
 		S:      S,
 		Status: status,
-		Blame:  tKeySign.tssCommonStruct.BlamePeers,
+		Blame:  *tKeySign.tssCommonStruct.GetBlameMgr().GetBlame(),
 	}
 	jsonResult, err := json.MarshalIndent(signResp, "", "	")
 	if err != nil {

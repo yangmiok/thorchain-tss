@@ -13,7 +13,9 @@ import (
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
 
+	"gitlab.com/thorchain/tss/go-tss/blame"
 	"gitlab.com/thorchain/tss/go-tss/common"
+	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/messages"
 	"gitlab.com/thorchain/tss/go-tss/p2p"
 	"gitlab.com/thorchain/tss/go-tss/storage"
@@ -28,7 +30,6 @@ type TssKeyGen struct {
 	localParty      *btss.PartyID
 	stateManager    storage.LocalStateManager
 	commStopChan    chan struct{}
-	lastMsg         btss.Message
 }
 
 func NewTssKeyGen(localP2PID string,
@@ -51,7 +52,6 @@ func NewTssKeyGen(localP2PID string,
 		localParty:      nil,
 		stateManager:    stateManager,
 		commStopChan:    make(chan struct{}),
-		lastMsg:         nil,
 	}
 }
 
@@ -64,7 +64,7 @@ func (tKeyGen *TssKeyGen) GetTssCommonStruct() *common.TssCommon {
 }
 
 func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq Request) (*bcrypto.ECPoint, error) {
-	partiesID, localPartyID, err := common.GetParties(keygenReq.Keys, tKeyGen.localNodePubKey)
+	partiesID, localPartyID, err := conversion.GetParties(keygenReq.Keys, tKeyGen.localNodePubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get keygen parties: %w", err)
 	}
@@ -87,19 +87,24 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq Request) (*bcrypto.ECPoint, e
 		tKeyGen.logger.Error().Err(err).Msg("error, empty pre-parameters")
 		return nil, errors.New("error, empty pre-parameters")
 	}
+	blameMgr := tKeyGen.tssCommonStruct.GetBlameMgr()
 	keyGenParty := bkg.NewLocalParty(params, outCh, endCh, *tKeyGen.preParams)
-	partyIDMap := common.SetupPartyIDMap(partiesID)
-	err = common.SetupIDMaps(partyIDMap, tKeyGen.tssCommonStruct.PartyIDtoP2PID)
-	if err != nil {
+	partyIDMap := conversion.SetupPartyIDMap(partiesID)
+	err1 := conversion.SetupIDMaps(partyIDMap, tKeyGen.tssCommonStruct.PartyIDtoP2PID)
+	err2 := conversion.SetupIDMaps(partyIDMap, blameMgr.PartyIDtoP2PID)
+	if err1 != nil || err2 != nil {
 		tKeyGen.logger.Error().Msgf("error in creating mapping between partyID and P2P ID")
 		return nil, err
 	}
 
-	tKeyGen.tssCommonStruct.SetPartyInfo(&common.PartyInfo{
+	partyInfo := &common.PartyInfo{
 		Party:      keyGenParty,
 		PartyIDMap: partyIDMap,
-	})
-	tKeyGen.tssCommonStruct.P2PPeers = common.GetPeersID(tKeyGen.tssCommonStruct.PartyIDtoP2PID, tKeyGen.tssCommonStruct.GetLocalPeerID())
+	}
+
+	tKeyGen.tssCommonStruct.SetPartyInfo(partyInfo)
+	blameMgr.SetPartyInfo(keyGenParty, partyIDMap)
+	tKeyGen.tssCommonStruct.P2PPeers = conversion.GetPeersID(tKeyGen.tssCommonStruct.PartyIDtoP2PID, tKeyGen.tssCommonStruct.GetLocalPeerID())
 	var keyGenWg sync.WaitGroup
 	keyGenWg.Add(2)
 	// start keygen
@@ -137,6 +142,7 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 	defer tKeyGen.logger.Info().Msg("finished keygen process")
 	tKeyGen.logger.Info().Msg("start to read messages from local party")
 	tssConf := tKeyGen.tssCommonStruct.GetConf()
+	blameMgr := tKeyGen.tssCommonStruct.GetBlameMgr()
 	for {
 		select {
 		case <-errChan: // when keyGenParty return
@@ -149,33 +155,31 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 		case <-time.After(tssConf.KeyGenTimeout):
 			// we bail out after KeyGenTimeoutSeconds
 			tKeyGen.logger.Error().Msgf("fail to generate message with %s", tssConf.KeyGenTimeout.String())
-			tssCommonStruct := tKeyGen.GetTssCommonStruct()
-
-			lastMsg := tKeyGen.lastMsg
+			lastMsg := blameMgr.GetLastMsg()
 			if lastMsg == nil {
 				tKeyGen.logger.Error().Msg("fail to start the keygen, the last produced message of this node is none")
 				return nil, errors.New("timeout before shared message is generated")
 			}
-			var blameNodes []common.BlameNode
+			var blameNodes []blame.Node
 			var err error
 			if lastMsg.IsBroadcast() == false {
-				blameNodes, err = tssCommonStruct.GetUnicastBlame(lastMsg.Type())
+				blameNodes, err = blameMgr.GetUnicastBlame(lastMsg.Type())
 				if err != nil {
 					tKeyGen.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
 			} else {
-				blameNodes, err = tssCommonStruct.GetBroadcastBlame(lastMsg.Type())
+				blameNodes, err = blameMgr.GetBroadcastBlame(lastMsg.Type())
 				if err != nil {
 					tKeyGen.logger.Error().Err(err).Msg("error in get broadcast blame")
 				}
 			}
 
-			tssCommonStruct.BlamePeers.SetBlame(common.BlameTssTimeout, blameNodes)
-			return nil, common.ErrTssTimeOut
+			blameMgr.GetBlame().SetBlame(blame.TssTimeout, blameNodes)
+			return nil, blame.ErrTssTimeOut
 
 		case msg := <-outCh:
 			tKeyGen.logger.Debug().Msgf(">>>>>>>>>>msg: %s", msg.String())
-			tKeyGen.lastMsg = msg
+			blameMgr.SetLastMsg(msg)
 			err := tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg)
 			if err != nil {
 				tKeyGen.logger.Error().Err(err).Msg("fail to process the message")

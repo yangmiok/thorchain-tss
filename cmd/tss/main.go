@@ -13,6 +13,7 @@ import (
 	golog "github.com/ipfs/go-log"
 
 	"gitlab.com/thorchain/tss/go-tss/common"
+	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/p2p"
 	"gitlab.com/thorchain/tss/go-tss/tss"
 )
@@ -38,7 +39,7 @@ func main() {
 	common.InitLog(logLevel, pretty, "tss_service")
 
 	// Setup Bech32 Prefixes
-	common.SetupBech32Prefix()
+	conversion.SetupBech32Prefix()
 	// this is only need for the binance library
 	if os.Getenv("NET") == "testnet" || os.Getenv("NET") == "mocknet" {
 		types.Network = types.TestNetwork
@@ -50,7 +51,7 @@ func main() {
 		fmt.Printf("error in get the secret key: %s\n", err.Error())
 		return
 	}
-	priKey, err := tss.GetPriKey(priKeyBytes)
+	priKey, err := conversion.GetPriKey(priKeyBytes)
 	if err != nil {
 		log.Fatal(err)
 	}

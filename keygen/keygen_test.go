@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/binance-chain/tss-lib/crypto"
-
 	"github.com/libp2p/go-libp2p-core/peer"
 	tcrypto "github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
@@ -25,6 +24,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/tss/go-tss/common"
+	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/messages"
 	"gitlab.com/thorchain/tss/go-tss/p2p"
 	"gitlab.com/thorchain/tss/go-tss/storage"
@@ -72,7 +72,7 @@ var _ = Suite(&TssKeygenTestSuite{})
 
 func (s *TssKeygenTestSuite) SetUpSuite(c *C) {
 	common.InitLog("info", true, "keygen_test")
-	common.SetupBech32Prefix()
+	conversion.SetupBech32Prefix()
 	for _, el := range testNodePrivkey {
 		priHexBytes, err := base64.StdEncoding.DecodeString(el)
 		c.Assert(err, IsNil)
@@ -188,8 +188,12 @@ func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
 			comm.SetSubscribe(messages.TSSKeyGenVerMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSControlMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSTaskDone, messageID, keygenMsgChannel)
 			defer comm.CancelSubscribe(messages.TSSKeyGenMsg, messageID)
 			defer comm.CancelSubscribe(messages.TSSKeyGenVerMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSControlMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSTaskDone, messageID)
 			sig, err := keygenInstance.GenerateNewKey(req)
 			c.Assert(err, IsNil)
 			lock.Lock()
@@ -233,9 +237,12 @@ func (s *TssKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
 			comm.SetSubscribe(messages.TSSKeyGenVerMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSControlMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSTaskDone, messageID, keygenMsgChannel)
 			defer comm.CancelSubscribe(messages.TSSKeyGenMsg, messageID)
 			defer comm.CancelSubscribe(messages.TSSKeyGenVerMsg, messageID)
-
+			defer comm.CancelSubscribe(messages.TSSControlMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSTaskDone, messageID)
 			if idx == 1 {
 				go func() {
 					time.Sleep(time.Millisecond * 200)
@@ -246,7 +253,7 @@ func (s *TssKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 			c.Assert(err, NotNil)
 			// we skip the node 1 as we force it to stop
 			if idx != 1 {
-				blames := keygenInstance.GetTssCommonStruct().BlamePeers.BlameNodes
+				blames := keygenInstance.GetTssCommonStruct().GetBlameMgr().GetBlame().BlameNodes
 				c.Assert(blames, HasLen, 1)
 				c.Assert(blames[0].Pubkey, Equals, testPubKeys[1])
 			}
