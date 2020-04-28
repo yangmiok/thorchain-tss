@@ -266,7 +266,7 @@ func (t *TssCommon) getMsgHash(localCacheItem *LocalCacheItem, threshold int) (s
 		t.logger.Error().Err(err).Msg("fail to get the hash freq")
 		return "", blame.ErrHashCheck
 	}
-	if freq < threshold {
+	if freq < threshold-1 {
 		t.logger.Debug().Msgf("fail to have more than 2/3 peers agree on the received message threshold(%d)--total confirmed(%d)\n", threshold, freq)
 		return "", blame.ErrHashInconsistency
 	}
@@ -310,7 +310,8 @@ func (t *TssCommon) hashCheck(localCacheItem *LocalCacheItem, threshold int) err
 		t.logger.Debug().Msgf("hash check complete for messageID: %v", t.msgID)
 		return nil
 	}
-	return blame.ErrMsgHashCheck
+	fmt.Printf("----we is %v", t.GetLocalPeerID())
+	return blame.ErrNotMajority
 }
 
 func (t *TssCommon) checkinAttackList(target peer.ID) bool {
@@ -429,7 +430,7 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		}
 		t.peerUpdateLock.RUnlock()
 		if t.GetLocalPeerID() == "16Uiu2HAmAWKWf5vnpiAhfdSQebTbbB3Bg35qtyG7Hr4ce23VFA8V" {
-			fmt.Println("okay############index=", t.getPartyInfo().Party.PartyID().Index)
+			fmt.Printf("%v############index=%v", wireMsg.RoundInfo, t.getPartyInfo().Party.PartyID().Index)
 		}
 		t.renderToP2P(&messages.BroadcastMsgChan{
 			WrappedMessage: wrappedMsgNormal,
@@ -466,22 +467,27 @@ func (t *TssCommon) processBlameVerMsg(broadcastConfirmMsg *messages.BroadcastCo
 	return nil
 }
 
-func (t *TssCommon) applyShare(localCacheItem *LocalCacheItem, threshold int, key string) error {
+func (t *TssCommon) applyShare(localCacheItem *LocalCacheItem, threshold int, key string, msgType messages.THORChainTSSMessageType) error {
 	err := t.hashCheck(localCacheItem, threshold)
 	if err != nil {
 		if errors.Is(err, blame.ErrNotEnoughPeer) {
 			return nil
 		}
+		if errors.Is(err, blame.ErrNotMajority) {
+			t.logger.Error().Err(err).Msg("we send request to get the message mathch with majority")
+			localCacheItem.Msg = nil
+			return t.requestShareFromPeer(localCacheItem, threshold, key, msgType)
+		}
+		fmt.Printf("-wwwwwwwwwwwwwwwwww%v\n", err)
 		blamePk, err := t.blameMgr.TssWrongShareBlame(localCacheItem.Msg)
 		if err != nil {
 			t.logger.Error().Err(err).Msgf("error in get the blame nodes")
 			t.blameMgr.GetBlame().SetBlame(blame.HashCheckFail, nil)
-			return fmt.Errorf("error in getting the blame nodes %w", blame.ErrMsgHashCheck)
+			return fmt.Errorf("error in getting the blame nodes %w", blame.ErrHashCheck)
 		}
-		fmt.Println("ssssssssssseeeeeeeeeeettttttttttbbbbbbbbbbbblllllll")
 		blameNode := blame.NewBlameNode(blamePk, localCacheItem.Msg.Message, localCacheItem.Msg.Sig)
 		t.blameMgr.GetBlame().SetBlame(blame.HashCheckFail, []blame.Node{blameNode})
-		return blame.ErrMsgHashCheck
+		return blame.ErrHashCheck
 	}
 
 	if err := t.updateLocal(localCacheItem.Msg); nil != err {
@@ -497,7 +503,8 @@ func (t *TssCommon) applyShare(localCacheItem *LocalCacheItem, threshold int, ke
 func (t *TssCommon) requestShareFromPeer(localCacheItem *LocalCacheItem, threshold int, key string, msgType messages.THORChainTSSMessageType) error {
 	targetHash, err := t.getMsgHash(localCacheItem, threshold)
 	if err != nil {
-		return err
+		t.logger.Debug().Msg("we do not know which message to request, so we quit")
+		return nil
 	}
 	var peersIDs []peer.ID
 	for thisPeerStr, hash := range localCacheItem.ConfirmedList {
@@ -526,9 +533,11 @@ func (t *TssCommon) requestShareFromPeer(localCacheItem *LocalCacheItem, thresho
 		msg.RequestType = messages.TSSKeySignMsg
 		return t.processRequestMsgFromPeer(peersIDs, msg, true)
 	default:
-		t.logger.Debug().Msg("unknown message type for request")
-		return nil
+		msg.RequestType = msgType
+		return t.processRequestMsgFromPeer(peersIDs, msg, true)
+		t.logger.Debug().Msg("we set the message type as it is passed")
 	}
+	return nil
 }
 
 func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirmMessage, msgType messages.THORChainTSSMessageType) error {
@@ -560,7 +569,7 @@ func (t *TssCommon) processVerMsg(broadcastConfirmMsg *messages.BroadcastConfirm
 	if localCacheItem.Msg == nil {
 		return t.requestShareFromPeer(localCacheItem, threshold, key, msgType)
 	}
-	return t.applyShare(localCacheItem, threshold, key)
+	return t.applyShare(localCacheItem, threshold, key, msgType)
 }
 
 func (t *TssCommon) broadcastHashToPeers(key, msgHash string, peerIDs []peer.ID, msgType messages.THORChainTSSMessageType) error {
@@ -687,7 +696,7 @@ func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType message
 	if err != nil {
 		return err
 	}
-	return t.applyShare(localCacheItem, threshold, key)
+	return t.applyShare(localCacheItem, threshold, key, msgType)
 }
 
 func getBroadcastMessageType(msgType messages.THORChainTSSMessageType) messages.THORChainTSSMessageType {

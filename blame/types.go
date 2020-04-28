@@ -22,7 +22,7 @@ const (
 var (
 	ErrHashFromOwner     = errors.New(" hash sent from data owner")
 	ErrNotEnoughPeer     = errors.New("not enough nodes to evaluate hash")
-	ErrMsgHashCheck      = errors.New("message we received does not match the majority")
+	ErrNotMajority       = errors.New("message we received does not match the majority")
 	ErrHashFromPeer      = errors.New("hashcheck error from peer")
 	ErrTssTimeOut        = errors.New("error Tss Timeout")
 	ErrHashCheck         = errors.New("error in processing hash check")

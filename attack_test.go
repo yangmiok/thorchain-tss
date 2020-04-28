@@ -108,7 +108,7 @@ func (s *SixNodeTestSuite) SetUpTest(c *C) {
 		} else {
 			s.servers[i] = s.getTssServer(c, i, conf, s.bootstrapPeer)
 		}
-		time.Sleep(time.Second)
+		time.Sleep(time.Millisecond * 500)
 	}
 	s.keyGenPeersID = peersID
 	s.keySignPeersID = peersID
@@ -124,6 +124,9 @@ func hash(payload []byte) []byte {
 }
 
 func (s *SixNodeTestSuite) TestApplyWrongShareNotFail(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
 	req := keygen.NewRequest(testPubKeys, "", nil, nil, nil)
 	// we apply the second broadcast message to all peers
 	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN3, testPeersIDs, nil, nil)
@@ -165,6 +168,47 @@ func (s *SixNodeTestSuite) TestApplyWrongShareNotFail(c *C) {
 }
 
 // this tigger binance Tss bug
+func (s *SixNodeTestSuite) TestKeygenAttackSendWrongShareNotFail(c *C) {
+	shares, err := getTestShares(c)
+	c.Assert(err, IsNil)
+	req := keygen.NewRequest(testPubKeys, "", nil, nil, nil)
+	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN2b, nil, testPeersIDs[1:2], shares[2])
+	wg := sync.WaitGroup{}
+	keygenResult := make(map[int]keygen.Response)
+	lock := &sync.Mutex{}
+	for i := 0; i < partyNum; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			if idx == 1 {
+				resp, err := s.servers[idx].Keygen(req1)
+				c.Assert(err, IsNil)
+				c.Assert(resp.Blame.BlameNodes, HasLen, 0)
+				lock.Lock()
+				defer lock.Unlock()
+				keygenResult[idx] = resp
+			} else {
+				resp, err := s.servers[idx].Keygen(req)
+				c.Assert(resp.Blame.BlameNodes, HasLen, 0)
+				c.Assert(err, IsNil)
+				lock.Lock()
+				defer lock.Unlock()
+				keygenResult[idx] = resp
+			}
+		}(i)
+	}
+	wg.Wait()
+	var poolPubKey string
+	for _, item := range keygenResult {
+		if len(poolPubKey) == 0 {
+			poolPubKey = item.PubKey
+		} else {
+			c.Assert(poolPubKey, Equals, item.PubKey)
+		}
+	}
+}
+
+// this tigger binance Tss bug
 func (s *SixNodeTestSuite) TestKeygenAttackSendWrongShareToAll(c *C) {
 	if testing.Short() {
 		c.Skip("skipping test in short mode.")
@@ -194,6 +238,9 @@ func (s *SixNodeTestSuite) TestKeygenAttackSendWrongShareToAll(c *C) {
 }
 
 func (s *SixNodeTestSuite) TestKeygenAttackOnePeerFail(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
 	req := keygen.NewRequest(testPubKeys, "", nil, nil, nil)
 	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN3, testPeersIDs[:2], nil, nil)
 	wg := sync.WaitGroup{}

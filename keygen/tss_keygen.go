@@ -197,7 +197,6 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 				tKeyGen.tssCommonStruct.UpdateP2PMembers(tKeyGen.changePeers)
 			}
 
-			// err := tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg, nil)
 			var err error
 			if tKeyGen.stopPhase == msg.Type() {
 				err = tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg, tKeyGen.wrongShares)
