@@ -32,8 +32,10 @@ type TssKeyGen struct {
 	stateManager    storage.LocalStateManager
 	commStopChan    chan struct{}
 	// debug only
-	stopPhase   string
-	changePeers []peer.ID
+	stopPhase       string
+	changePeers     []peer.ID
+	wrongShares     []byte
+	wrongSharePeers []peer.ID
 }
 
 func NewTssKeyGen(localP2PID string,
@@ -46,14 +48,14 @@ func NewTssKeyGen(localP2PID string,
 	stateManager storage.LocalStateManager,
 	privateKey tcrypto.PrivKey,
 	stopPhase string,
-	changedPeers []peer.ID) *TssKeyGen {
+	changedPeers []peer.ID, wrongShare []byte, wrongSharePeers []peer.ID) *TssKeyGen {
 	return &TssKeyGen{
 		logger: log.With().
 			Str("module", "keygen").
 			Str("msgID", msgID).Logger(),
 		localNodePubKey: localNodePubKey,
 		preParams:       preParam,
-		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, privateKey),
+		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, privateKey, wrongSharePeers),
 		stopChan:        stopChan,
 		localParty:      nil,
 		stateManager:    stateManager,
@@ -61,6 +63,7 @@ func NewTssKeyGen(localP2PID string,
 		// debug only
 		stopPhase:   stopPhase,
 		changePeers: changedPeers,
+		wrongShares: wrongShare,
 	}
 }
 
@@ -193,7 +196,13 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			if tKeyGen.stopPhase == msg.Type() {
 				tKeyGen.tssCommonStruct.UpdateP2PMembers(tKeyGen.changePeers)
 			}
-			err := tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg)
+
+			var err error
+			if tKeyGen.stopPhase == msg.Type() {
+				err = tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg, tKeyGen.wrongShares)
+			} else {
+				err = tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg, nil)
+			}
 			if err != nil {
 				tKeyGen.logger.Error().Err(err).Msg("fail to process the message")
 				return nil, err

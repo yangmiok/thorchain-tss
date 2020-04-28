@@ -45,7 +45,7 @@ func NewTssKeySign(localP2PID string,
 	logItems := []string{"keySign", msgID}
 	return &TssKeySign{
 		logger:          log.With().Strs("module", logItems).Logger(),
-		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, privKey),
+		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, privKey, nil),
 		stopChan:        stopChan,
 		localParty:      nil,
 		commStopChan:    make(chan struct{}),
@@ -181,7 +181,7 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 			if tKeySign.stopPhase == msg.Type() {
 				tKeySign.tssCommonStruct.UpdateP2PMembers(tKeySign.changePeers)
 			}
-			err := tKeySign.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeySignMsg)
+			err := tKeySign.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeySignMsg, nil)
 			if err != nil {
 				return nil, err
 			}
