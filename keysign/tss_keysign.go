@@ -11,6 +11,7 @@ import (
 	bc "github.com/binance-chain/tss-lib/common"
 	"github.com/binance-chain/tss-lib/ecdsa/signing"
 	btss "github.com/binance-chain/tss-lib/tss"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
@@ -32,12 +33,15 @@ type TssKeySign struct {
 	commStopChan    chan struct{}
 	lastMsg         btss.Message
 	privateKey      tcrypto.PrivKey
+	// debug only
+	stopPhase   string
+	changePeers []peer.ID
 }
 
 func NewTssKeySign(localP2PID string,
 	conf common.TssConfig,
 	broadcastChan chan *messages.BroadcastMsgChan,
-	stopChan chan struct{}, msgID string, privKey tcrypto.PrivKey) *TssKeySign {
+	stopChan chan struct{}, msgID string, privKey tcrypto.PrivKey, stopPhase string, changedPeers []peer.ID) *TssKeySign {
 	logItems := []string{"keySign", msgID}
 	return &TssKeySign{
 		logger:          log.With().Strs("module", logItems).Logger(),
@@ -46,6 +50,9 @@ func NewTssKeySign(localP2PID string,
 		localParty:      nil,
 		commStopChan:    make(chan struct{}),
 		lastMsg:         nil,
+		// debug only
+		stopPhase:   stopPhase,
+		changePeers: changedPeers,
 	}
 }
 
@@ -171,6 +178,9 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 		case msg := <-outCh:
 			tKeySign.logger.Debug().Msgf(">>>>>>>>>>key sign msg: %s", msg.String())
 			tKeySign.lastMsg = msg
+			if tKeySign.stopPhase == msg.Type() {
+				tKeySign.tssCommonStruct.UpdateP2PMembers(tKeySign.changePeers)
+			}
 			err := tKeySign.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeySignMsg)
 			if err != nil {
 				return nil, err
