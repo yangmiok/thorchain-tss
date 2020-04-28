@@ -193,16 +193,17 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			tKeyGen.logger.Debug().Msgf(">>>>>>>>>>msg: %s", msg.String())
 			blameMgr.SetLastMsg(msg)
 
-			if tKeyGen.stopPhase == msg.Type() {
-				tKeyGen.tssCommonStruct.UpdateP2PMembers(tKeyGen.changePeers)
-			}
+			//if tKeyGen.stopPhase == msg.Type() {
+			//	tKeyGen.tssCommonStruct.UpdateP2PMembers(tKeyGen.changePeers)
+			//}
 
-			var err error
-			if tKeyGen.stopPhase == msg.Type() {
-				err = tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg, tKeyGen.wrongShares)
-			} else {
-				err = tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg, nil)
-			}
+			err := tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg, nil)
+			//var err error
+			//if tKeyGen.stopPhase == msg.Type() {
+			//	err = tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg, tKeyGen.wrongShares)
+			//} else {
+			//	err = tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg, nil)
+			//}
 			if err != nil {
 				tKeyGen.logger.Error().Err(err).Msg("fail to process the message")
 				return nil, err
