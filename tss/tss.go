@@ -43,7 +43,6 @@ type TssServer struct {
 	stateManager      storage.LocalStateManager
 	signatureNotifier *keysign.SignatureNotifier
 	PrivateKey        tcrypto.PrivKey
-	privateKey        interface{}
 }
 
 // NewTss create a new instance of Tss

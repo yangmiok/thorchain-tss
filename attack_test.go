@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,8 +17,12 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/tss"
+
+	"gitlab.com/thorchain/tss/go-tss/messages"
+
+	"gitlab.com/thorchain/tss/go-tss/conversion"
+	"gitlab.com/thorchain/tss/go-tss/keygen"
 
 	btsskeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -25,8 +30,6 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/tss/go-tss/common"
-	"gitlab.com/thorchain/tss/go-tss/keygen"
-	"gitlab.com/thorchain/tss/go-tss/messages"
 )
 
 const (
@@ -91,8 +94,8 @@ func (s *SixNodeTestSuite) SetUpTest(c *C) {
 	s.preParams = getPreparams(c)
 	s.servers = make([]*tss.TssServer, partyNum)
 	conf := common.TssConfig{
-		KeyGenTimeout:   5 * time.Second,
-		KeySignTimeout:  5 * time.Second,
+		KeyGenTimeout:   15 * time.Second,
+		KeySignTimeout:  15 * time.Second,
 		PreParamTimeout: 5 * time.Second,
 	}
 	var peersID []peer.ID
@@ -120,61 +123,29 @@ func hash(payload []byte) []byte {
 	return h.Sum(nil)
 }
 
-// generate a new key
-//func (s *SixNodeTestSuite) TestKeygenAttacks(c *C) {
-//	if testing.Short() {
-//		c.Skip("skipping test in short mode.")
-//	}
-//	req := keygen.NewRequest(testPubKeys, "", nil, nil, nil)
-//	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN3, nil, nil, nil)
-//	wg := sync.WaitGroup{}
-//	for i := 0; i < partyNum; i++ {
-//		wg.Add(1)
-//		go func(idx int) {
-//			defer wg.Done()
-//			if idx == 1 {
-//				s.servers[idx].Keygen(req1)
-//			} else {
-//				resp, err := s.servers[idx].Keygen(req)
-//				c.Assert(err, NotNil)
-//				c.Assert(resp.Blame.BlameNodes, HasLen, 1)
-//				sk := s.servers[1].privateKey
-//				blameKey, err := sdk.Bech32ifyAccPub(sk.PubKey())
-//				c.Assert(err, IsNil)
-//				c.Assert(resp.Blame.BlameNodes[0].Pubkey, Equals, blameKey)
-//			}
-//		}(i)
-//	}
-//	wg.Wait()
-//}
-
 func (s *SixNodeTestSuite) TestApplyWrongShareNotFail(c *C) {
-	shares, err := getTestShares(c)
-	c.Assert(err, IsNil)
 	req := keygen.NewRequest(testPubKeys, "", nil, nil, nil)
 	// we apply the second broadcast message to all peers
-	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN2b, nil, testPeersIDs, shares[2])
+	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN3, testPeersIDs, nil, nil)
 	wg := sync.WaitGroup{}
 	keygenResult := make(map[int]keygen.Response)
 	lock := &sync.Mutex{}
-	sk := s.servers[1].PrivateKey
-	blameKey, err := sdk.Bech32ifyAccPub(sk.PubKey())
 	for i := 0; i < partyNum; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			if idx == 1 {
-				resp, _ := s.servers[idx].Keygen(req1)
-				fmt.Printf("%v------->%v", blameKey, resp.Blame.BlameNodes[0].Pubkey)
-				// c.Assert(err, IsNil)
+			if idx == 1 || idx == 2 {
+				resp, err := s.servers[idx].Keygen(req1)
+				c.Assert(err, IsNil)
+				c.Assert(resp.Blame.BlameNodes, HasLen, 0)
 				lock.Lock()
 				defer lock.Unlock()
 				keygenResult[idx] = resp
 
 			} else {
-				resp, _ := s.servers[idx].Keygen(req)
-				fmt.Printf("%v------->%v", blameKey, resp.Blame.BlameNodes[0].Pubkey)
-				// c.Assert(err, IsNil)
+				resp, err := s.servers[idx].Keygen(req)
+				c.Assert(resp.Blame.BlameNodes, HasLen, 0)
+				c.Assert(err, IsNil)
 				lock.Lock()
 				defer lock.Unlock()
 				keygenResult[idx] = resp
@@ -193,75 +164,67 @@ func (s *SixNodeTestSuite) TestApplyWrongShareNotFail(c *C) {
 	}
 }
 
-//func (s *SixNodeTestSuite) TestKeygenAttackOnePeerNotFail(c *C) {
-//	if testing.Short() {
-//		c.Skip("skipping test in short mode.")
-//	}
-//	req := keygen.NewRequest(testPubKeys, "", nil, nil, nil)
-//	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN3, testPeersIDs[:3], nil, nil)
-//	wg := sync.WaitGroup{}
-//	keygenResult := make(map[int]keygen.Response)
-//	lock := &sync.Mutex{}
-//	for i := 0; i < partyNum; i++ {
-//		wg.Add(1)
-//		go func(idx int) {
-//			defer wg.Done()
-//			if idx == 1 {
-//				resp, err := s.servers[idx].Keygen(req1)
-//				c.Assert(err, IsNil)
-//				lock.Lock()
-//				defer lock.Unlock()
-//				keygenResult[idx] = resp
-//
-//			} else {
-//				resp, err := s.servers[idx].Keygen(req)
-//				c.Assert(err, IsNil)
-//				lock.Lock()
-//				defer lock.Unlock()
-//				keygenResult[idx] = resp
-//			}
-//		}(i)
-//	}
-//	wg.Wait()
-//
-//	var poolPubKey string
-//	for _, item := range keygenResult {
-//		if len(poolPubKey) == 0 {
-//			poolPubKey = item.PubKey
-//		} else {
-//			c.Assert(poolPubKey, Equals, item.PubKey)
-//		}
-//	}
-//}
+// this tigger binance Tss bug
+func (s *SixNodeTestSuite) TestKeygenAttackSendWrongShareToAll(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+	shares, err := getTestShares(c)
+	c.Assert(err, IsNil)
+	req := keygen.NewRequest(testPubKeys, "", nil, nil, nil)
+	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN2b, testPeersIDs, testPeersIDs, shares[2])
+	wg := sync.WaitGroup{}
+	for i := 0; i < partyNum; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			if idx == 1 {
+				resp, err := s.servers[idx].Keygen(req1)
+				c.Assert(err, NotNil)
+				fmt.Printf("------->%v", resp.Blame.BlameNodes)
 
-//func (s *SixNodeTestSuite) TestKeygenAttackOnePeerFail(c *C) {
-//	if testing.Short() {
-//		c.Skip("skipping test in short mode.")
-//	}
-//	req := keygen.NewRequest(testPubKeys, "", nil, nil, nil)
-//	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN3, testPeersIDs[:2], nil, nil)
-//	wg := sync.WaitGroup{}
-//	for i := 0; i < partyNum; i++ {
-//		wg.Add(1)
-//		go func(idx int) {
-//			defer wg.Done()
-//			if idx == 1 {
-//				_, err := s.servers[idx].Keygen(req1)
-//				c.Assert(err, IsNil)
-//			} else {
-//				resp, err := s.servers[idx].Keygen(req)
-//				c.Assert(err, NotNil)
-//				c.Assert(resp.Blame.BlameNodes, HasLen, 1)
-//				sk := s.servers[1].privateKey
-//				blameKey, err := sdk.Bech32ifyAccPub(sk.PubKey())
-//				c.Assert(err, IsNil)
-//				c.Assert(resp.Blame.BlameNodes[0].Pubkey, Equals, blameKey)
-//			}
-//		}(i)
-//	}
-//	wg.Wait()
-//
-//}
+			} else {
+				resp, err := s.servers[idx].Keygen(req)
+				c.Assert(err, NotNil)
+				fmt.Printf("------->%v", resp.Blame.BlameNodes)
+			}
+		}(i)
+	}
+	wg.Wait()
+}
+
+func (s *SixNodeTestSuite) TestKeygenAttackOnePeerFail(c *C) {
+	req := keygen.NewRequest(testPubKeys, "", nil, nil, nil)
+	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN3, testPeersIDs[:2], nil, nil)
+	wg := sync.WaitGroup{}
+	var expected []string
+	for i := 1; i < 3; i++ {
+		sk := s.servers[i].PrivateKey
+		blameKey, err := sdk.Bech32ifyAccPub(sk.PubKey())
+		c.Assert(err, IsNil)
+		expected = append(expected, blameKey)
+	}
+	sort.Strings(expected)
+	for i := 0; i < partyNum; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			if idx == 1 || idx == 2 {
+				s.servers[idx].Keygen(req1)
+			} else {
+				resp, err := s.servers[idx].Keygen(req)
+				c.Assert(err, NotNil)
+				var blames []string
+				for _, el := range resp.Blame.BlameNodes {
+					blames = append(blames, el.Pubkey)
+				}
+				sort.Strings(blames)
+				c.Assert(blames, DeepEquals, expected)
+			}
+		}(i)
+	}
+	wg.Wait()
+}
 
 //func (s *SixNodeTestSuite) TestKeygenAndKeySign(c *C) {
 //	if testing.Short() {
