@@ -41,6 +41,7 @@ func (m *Manager) tssTimeoutBlame(lastMessageType string, partyIDMap map[string]
 
 	return blamePubKeys, nil
 }
+
 // this blame blames the node who cause the timeout in node sync
 func (m *Manager) NodeSyncBlame(keys []string, onlinePeers []peer.ID) (Blame, error) {
 	blame := Blame{

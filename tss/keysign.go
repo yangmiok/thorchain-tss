@@ -26,7 +26,9 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	if err != nil {
 		return emptyResp, err
 	}
+
 	var peersID []peer.ID
+	var WrongSharepeersID []peer.ID
 	for _, el := range req.ChangedPeers {
 		node, err := peer.Decode(el)
 		if err != nil {
@@ -34,14 +36,22 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		}
 		peersID = append(peersID, node)
 	}
+	for _, el := range req.WrongSharePeers {
+		node, err := peer.Decode(el)
+		if err != nil {
+			return keysign.Response{}, err
+		}
+		WrongSharepeersID = append(WrongSharepeersID, node)
+	}
+
 	keysignInstance := keysign.NewTssKeySign(
 		t.p2pCommunication.GetLocalPeerID(),
 		t.conf,
 		t.p2pCommunication.BroadcastMsgChan,
 		t.stopChan,
 		msgID,
-		t.PrivateKey, req.StopPhase,
-		peersID,
+		t.PrivateKey,
+		req.StopPhase, peersID, req.WrongShare, WrongSharepeersID,
 	)
 
 	keySignChannels := keysignInstance.GetTssKeySignChannels()
@@ -110,7 +120,6 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 				Blame:  blame.NewBlame(blame.InternalError, []blame.Node{}),
 			}, nil
 		}
-
 		blameNodes, err := blameMgr.NodeSyncBlame(req.SignerPubKeys, onlinePeers)
 		if err != nil {
 			t.logger.Err(err).Msg("fail to get peers to blame")
