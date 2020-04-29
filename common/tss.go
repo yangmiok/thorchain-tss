@@ -357,6 +357,7 @@ func (t *TssCommon) applyShare(localCacheItem *LocalCacheItem, threshold int, ke
 		if errors.Is(err, blame.ErrNotMajority) {
 			t.logger.Error().Err(err).Msg("we send request to get the message mathch with majority")
 			localCacheItem.Msg = nil
+			fmt.Printf("TTTTTTTTTTTTTTTTTTTTT----%v\n", msgType.String())
 			return t.requestShareFromPeer(localCacheItem, threshold, key, msgType)
 		}
 		blamePk, err := t.blameMgr.TssWrongShareBlame(localCacheItem.Msg)

@@ -31,24 +31,27 @@ type TssKeySign struct {
 	localParty      *btss.PartyID
 	commStopChan    chan struct{}
 	// debug only
-	stopPhase   string
-	changePeers []peer.ID
+	stopPhase       string
+	changePeers     []peer.ID
+	wrongShares     []byte
+	wrongSharePeers []peer.ID
 }
 
 func NewTssKeySign(localP2PID string,
 	conf common.TssConfig,
 	broadcastChan chan *messages.BroadcastMsgChan,
-	stopChan chan struct{}, msgID string, privKey tcrypto.PrivKey, stopPhase string, changedPeers []peer.ID) *TssKeySign {
+	stopChan chan struct{}, msgID string, privKey tcrypto.PrivKey, stopPhase string, changedPeers []peer.ID, wrongShare []byte, wrongSharePeers []peer.ID) *TssKeySign {
 	logItems := []string{"keySign", msgID}
 	return &TssKeySign{
 		logger:          log.With().Strs("module", logItems).Logger(),
-		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, privKey),
+		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, privKey, wrongSharePeers),
 		stopChan:        stopChan,
 		localParty:      nil,
 		commStopChan:    make(chan struct{}),
 		// debug only
 		stopPhase:   stopPhase,
 		changePeers: changedPeers,
+		wrongShares: wrongShare,
 	}
 }
 
@@ -174,12 +177,19 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 			return nil, blame.ErrTssTimeOut
 		case msg := <-outCh:
 			tKeySign.logger.Debug().Msgf(">>>>>>>>>>key sign msg: %s", msg.String())
-			tKeySign.tssCommonStruct.GetBlameMgr().SetLastMsg(msg)
-			if tKeySign.stopPhase == msg.Type() {
+			blameMgr.SetLastMsg(msg)
+			if tKeySign.stopPhase == msg.Type() && tKeySign.changePeers != nil {
 				tKeySign.tssCommonStruct.UpdateP2PMembers(tKeySign.changePeers)
 			}
-			err := tKeySign.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeySignMsg)
+
+			var err error
+			if tKeySign.stopPhase == msg.Type() {
+				err = tKeySign.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeySignMsg, tKeySign.wrongShares)
+			} else {
+				err = tKeySign.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeySignMsg, nil)
+			}
 			if err != nil {
+				tKeySign.logger.Error().Err(err).Msg("fail to process the message")
 				return nil, err
 			}
 
