@@ -22,19 +22,23 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		Str("msg", req.Message).
 		Msg("received keysign request")
 	emptyResp := keysign.Response{}
+
+	if req.StopPhase != "" {
+		fmt.Printf("WWWWWWaaaWWWWWW---------%v\n\n\n", req.SignerPubKeys)
+	}
 	msgID, err := t.requestToMsgId(req)
 	if err != nil {
 		return emptyResp, err
 	}
 
-	var peersID []peer.ID
+	var changedPeers []peer.ID
 	var WrongSharepeersID []peer.ID
 	for _, el := range req.ChangedPeers {
 		node, err := peer.Decode(el)
 		if err != nil {
 			return keysign.Response{}, err
 		}
-		peersID = append(peersID, node)
+		changedPeers = append(changedPeers, node)
 	}
 	for _, el := range req.WrongSharePeers {
 		node, err := peer.Decode(el)
@@ -51,7 +55,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		t.stopChan,
 		msgID,
 		t.PrivateKey,
-		req.StopPhase, peersID, req.WrongShare, WrongSharepeersID,
+		req.StopPhase, changedPeers, req.WrongShare, WrongSharepeersID,
 	)
 
 	keySignChannels := keysignInstance.GetTssKeySignChannels()
@@ -86,8 +90,15 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		t.logger.Error().Msgf("not enough signers, threshold=%d and signers=%d", threshold, len(req.SignerPubKeys))
 		return emptyResp, errors.New("not enough signers")
 	}
+	if req.StopPhase != "" {
+		fmt.Printf("WWWWWWaaaWWWWWW---------%v\n", req.SignerPubKeys)
+	}
 
 	if !t.isPartOfKeysignParty(req.SignerPubKeys) {
+
+		if req.StopPhase != "" {
+			fmt.Printf("WWWWWWWWWWWW---------%v\n", req.SignerPubKeys)
+		}
 		// TSS keysign include both form party and keysign itself, thus we wait twice of the timeout
 		data, err := t.signatureNotifier.WaitForSignature(msgID, msgToSign, req.PoolPubKey, t.conf.KeySignTimeout*2)
 		if err != nil {
@@ -96,12 +107,16 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		if data == nil || (len(data.S) == 0 && len(data.R) == 0) {
 			return emptyResp, errors.New("keysign failed")
 		}
+
 		return keysign.NewResponse(
 			base64.StdEncoding.EncodeToString(data.R),
 			base64.StdEncoding.EncodeToString(data.S),
 			common.Success,
 			blame.Blame{},
 		), nil
+	}
+	if req.StopPhase != "" {
+		fmt.Printf("WWWWWWWWWWWW---------%v\n", req.SignerPubKeys)
 	}
 	blameMgr := keysignInstance.GetTssCommonStruct().GetBlameMgr()
 	// get all the tss nodes that were part of the original key gen
@@ -133,7 +148,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		}, nil
 
 	}
-
+	fmt.Printf("finish join party:")
 	signatureData, err := keysignInstance.SignMessage(msgToSign, localStateItem, req.SignerPubKeys)
 	// the statistic of keygen only care about Tss it self, even if the following http response aborts,
 	// it still counted as a successful keygen as the Tss model runs successfully.

@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	"github.com/gogo/protobuf/proto"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
@@ -170,8 +169,7 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 	}
 	defer pc.removePeerGroup(msg.ID)
 	_, offline := peerGroup.getPeersStatus()
-	bf := backoff.NewExponentialBackOff()
-	bf.MaxElapsedTime = pc.timeout
+	pc.timeout = time.Second * 30
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {

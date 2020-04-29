@@ -430,7 +430,7 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		}
 		t.peerUpdateLock.RUnlock()
 		if t.GetLocalPeerID() == "16Uiu2HAmAWKWf5vnpiAhfdSQebTbbB3Bg35qtyG7Hr4ce23VFA8V" {
-			fmt.Printf("%v############index=%v", wireMsg.RoundInfo, t.getPartyInfo().Party.PartyID().Index)
+			fmt.Printf("%v############index=%v\n", wireMsg.RoundInfo, t.getPartyInfo().Party.PartyID().Index)
 		}
 		t.renderToP2P(&messages.BroadcastMsgChan{
 			WrappedMessage: wrappedMsgNormal,

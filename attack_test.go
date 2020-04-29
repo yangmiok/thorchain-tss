@@ -5,9 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,10 +32,11 @@ import (
 )
 
 const (
-	partyNum         = 6
-	testFileLocation = "./test_data"
-	preParamTestFile = "preParam_test.data"
-	testSharesFile   = "16Uiu2HAmAWKWf5vnpiAhfdSQebTbbB3Bg35qtyG7Hr4ce23VFA8V.data" // this is the test node1 share
+	partyNum              = 6
+	testFileLocation      = "./test_data"
+	preParamTestFile      = "preParam_test.data"
+	testSharesFileKeyGen  = "16Uiu2HAmAWKWf5vnpiAhfdSQebTbbB3Bg35qtyG7Hr4ce23VFA8V_gen_nounicast.data" // this is the test node1 share
+	testSharesFileKeySign = "16Uiu2HAmACG5DtqmQsHtXg4G2sLS65ttv84e7MrL4kapkjfmhxAp_sign.data" // this is the test node1 share
 )
 
 var (
@@ -103,7 +106,7 @@ func (s *SixNodeTestSuite) SetUpTest(c *C) {
 		} else {
 			s.servers[i] = s.getTssServer(c, i, conf, s.bootstrapPeer)
 		}
-		time.Sleep(time.Millisecond * 500)
+		time.Sleep(time.Millisecond * 800)
 	}
 	s.keyGenPeersID = peersID
 	s.keySignPeersID = peersID
@@ -271,6 +274,84 @@ func hash(payload []byte) []byte {
 //	wg.Wait()
 //}
 
+func (s *SixNodeTestSuite) TestKeySignWrongshareToAll(c *C) {
+	req := keygen.NewRequest(testPubKeys, "", nil, nil, nil)
+	wg := sync.WaitGroup{}
+	lock := &sync.Mutex{}
+	keygenResult := make(map[int]keygen.Response)
+	for i := 0; i < partyNum; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			res, err := s.servers[idx].Keygen(req)
+			c.Assert(err, IsNil)
+			lock.Lock()
+			defer lock.Unlock()
+			keygenResult[idx] = res
+		}(i)
+	}
+	wg.Wait()
+	var poolPubKey string
+	for _, item := range keygenResult {
+		if len(poolPubKey) == 0 {
+			poolPubKey = item.PubKey
+		} else {
+			c.Assert(poolPubKey, Equals, item.PubKey)
+		}
+	}
+	shares, err := getTestShares(c, testSharesFileKeySign)
+	fmt.Printf("---000---------%v\n",len(shares))
+	c.Assert(err, IsNil)
+	var signersKey []string
+	signersKey = append(signersKey, "thorpub1addwnpepqtdklw8tf3anjz7nn5fly3uvq2e67w2apn560s4smmrt9e3x52nt2svmmu3")
+	for _, el := range testPubKeys {
+		if el == "thorpub1addwnpepqtdklw8tf3anjz7nn5fly3uvq2e67w2apn560s4smmrt9e3x52nt2svmmu3" {
+			continue
+		}
+		signersKey = append(signersKey, el)
+		if len(signersKey) == 5 {
+			break
+		}
+	}
+	sort.Strings(signersKey)
+	attackerKey := make([]string, 4)
+	for i, el := range signersKey[:4] {
+		attackerKey[i] = el
+	}
+	keySignReq := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), signersKey, "", nil, nil, nil)
+	keySignReqErr := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), signersKey, messages.KEYSIGN6, testPeersIDs[:4], testPeersIDs[:4], shares[6])
+
+	keySignResult := make(map[int]keysign.Response)
+	for i := 0; i < partyNum; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			var err error
+			var res keysign.Response
+			if idx == 0 {
+				res, err = s.servers[idx].KeySign(keySignReqErr)
+			} else {
+				res, err = s.servers[idx].KeySign(keySignReq)
+			}
+			c.Assert(err, IsNil)
+			lock.Lock()
+			defer lock.Unlock()
+			keySignResult[idx] = res
+		}(i)
+	}
+	wg.Wait()
+	var signature string
+	for _, item := range keySignResult {
+		if len(signature) == 0 {
+			signature = item.S + item.R
+			continue
+		}
+		c.Assert(signature, Equals, item.S+item.R)
+	}
+	c.Assert(len(signature), Equals, 88)
+
+}
+
 func (s *SixNodeTestSuite) TestKeygenAndKeySign(c *C) {
 	req := keygen.NewRequest(testPubKeys, "", nil, nil, nil)
 	wg := sync.WaitGroup{}
@@ -296,18 +377,26 @@ func (s *SixNodeTestSuite) TestKeygenAndKeySign(c *C) {
 			c.Assert(poolPubKey, Equals, item.PubKey)
 		}
 	}
+	time.Sleep(time.Second)
 	var signersKey []string
-	signersKey = make([]string,5)
-	for i, el:= range testPubKeys[:5]{
-		signersKey[i] = el
+	signersKey = append(signersKey, "thorpub1addwnpepqtdklw8tf3anjz7nn5fly3uvq2e67w2apn560s4smmrt9e3x52nt2svmmu3")
+	for _, el := range testPubKeys {
+		if el == "thorpub1addwnpepqtdklw8tf3anjz7nn5fly3uvq2e67w2apn560s4smmrt9e3x52nt2svmmu3" {
+			continue
+		}
+		signersKey = append(signersKey, el)
+		if len(signersKey) == 5 {
+			break
+		}
 	}
-	var attackerKey []string
-	signersKey = make([]string,4)
-	for i, el:= range testPubKeys[:4]{
-		signersKey[i] = el
+	sort.Strings(signersKey)
+	attackerKey := make([]string, 4)
+	for i, el := range signersKey[:4] {
+		attackerKey[i] = el
 	}
-	keySignReq := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), signersKey, "", nil, nil, nil)
-	keySignReqErr := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), signersKey, messages.KEYSIGN7, attackerKey, nil, nil)
+	keySignReq := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld2"))), signersKey, "", nil, nil, nil)
+	keySignReqErr := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld2"))), signersKey, messages.KEYSIGN6, testPeersIDs[:4], nil, nil)
+	//keySignReqErr := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), signersKey, messages.KEYSIGN7, signersKey, nil, nil)
 	keySignResult := make(map[int]keysign.Response)
 	for i := 0; i < partyNum; i++ {
 		wg.Add(1)
@@ -315,7 +404,7 @@ func (s *SixNodeTestSuite) TestKeygenAndKeySign(c *C) {
 			defer wg.Done()
 			var err error
 			var res keysign.Response
-			if idx == 1 {
+			if idx == 0 {
 				res, err = s.servers[idx].KeySign(keySignReqErr)
 			} else {
 				res, err = s.servers[idx].KeySign(keySignReq)
@@ -335,19 +424,15 @@ func (s *SixNodeTestSuite) TestKeygenAndKeySign(c *C) {
 		}
 		c.Assert(signature, Equals, item.S+item.R)
 	}
-	c.Assert(len(signature),Equals,88)
+	c.Assert(len(signature), Equals, 88)
 
 }
 
 func (s *SixNodeTestSuite) TearDownTest(c *C) {
-	// give a second before we shutdown the network
-	time.Sleep(time.Millisecond * 200)
-	//if !s.isBlameTest {
-	//	s.servers[0].Stop()
-	//}
 	for i := 0; i < partyNum; i++ {
 		s.servers[i].Stop()
 	}
+	time.Sleep(time.Millisecond * 200)
 }
 
 func (s *SixNodeTestSuite) getTssServer(c *C, index int, conf common.TssConfig, bootstrap string) *tss.TssServer {
@@ -386,8 +471,8 @@ func getPreparams(c *C) []*btsskeygen.LocalPreParams {
 	return preParamArray
 }
 
-func getTestShares(c *C) ([][]byte, error) {
-	buf, err := ioutil.ReadFile(path.Join(testFileLocation, testSharesFile))
+func getTestShares(c *C, fileName string) ([][]byte, error) {
+	buf, err := ioutil.ReadFile(path.Join(testFileLocation, fileName))
 	if err != nil {
 		return nil, err
 	}

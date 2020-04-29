@@ -185,7 +185,6 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 			if tKeySign.stopPhase == msg.Type() && tKeySign.changePeers != nil {
 				tKeySign.tssCommonStruct.UpdateP2PMembers(tKeySign.changePeers)
 			}
-
 			var err error
 			if tKeySign.stopPhase == msg.Type() {
 				err = tKeySign.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeySignMsg, tKeySign.wrongShares)
