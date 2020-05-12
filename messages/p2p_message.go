@@ -73,7 +73,10 @@ type WireMessage struct {
 
 // GetCacheKey return the key we used to cache it locally
 func (m *WireMessage) GetCacheKey() string {
-	return fmt.Sprintf("%s-%s", m.Routing.From.Id, m.RoundInfo)
+	if m.Routing.To == nil {
+		return fmt.Sprintf("%s-all-%s", m.Routing.From.Id, m.RoundInfo)
+	}
+	return fmt.Sprintf("%s-%s-%s", m.Routing.From.Id, m.Routing.To[0].Id, m.RoundInfo)
 }
 
 type TssControl struct {

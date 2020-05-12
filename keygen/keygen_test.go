@@ -206,6 +206,74 @@ func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 	}
 }
 
+func (s *TssKeygenTestSuite) TestGenerateNewKeyWitRejectSendToOnePeer(c *C) {
+	sort.Strings(testPubKeys)
+	req := NewRequest(testPubKeys)
+	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
+	c.Assert(err, IsNil)
+	conf := common.TssConfig{
+		KeyGenTimeout:   60 * time.Second,
+		KeySignTimeout:  60 * time.Second,
+		PreParamTimeout: 5 * time.Second,
+	}
+	wg := sync.WaitGroup{}
+	lock := &sync.Mutex{}
+	keygenResult := make(map[int]*crypto.ECPoint)
+	for i := 0; i < s.partyNum; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			comm := s.comms[idx]
+			stopChan := make(chan struct{})
+			localPubKey := testPubKeys[idx]
+			keygenInstance := NewTssKeyGen(
+				comm.GetLocalPeerID(),
+				conf,
+				localPubKey,
+				comm.BroadcastMsgChan,
+				stopChan,
+				s.preParams[idx],
+				messageID,
+				s.stateMgrs[idx], s.nodePrivKeys[idx])
+			c.Assert(keygenInstance, NotNil)
+			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
+			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSKeyGenVerMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSControlMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSTaskDone, messageID, keygenMsgChannel)
+			defer comm.CancelSubscribe(messages.TSSKeyGenMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSKeyGenVerMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSControlMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSTaskDone, messageID)
+			stopWg := &sync.WaitGroup{}
+			if idx == 1 {
+				stopWg.Add(1)
+				go func() {
+					defer stopWg.Done()
+					for {
+						time.Sleep(time.Millisecond * 10)
+						if len(keygenInstance.tssCommonStruct.P2PPeers) > 0 {
+							keygenInstance.tssCommonStruct.P2PPeers = s.targePeers
+							return
+						}
+					}
+				}()
+			}
+			resp, err := keygenInstance.GenerateNewKey(req)
+			stopWg.Wait()
+			c.Assert(err, IsNil)
+			lock.Lock()
+			defer lock.Unlock()
+			keygenResult[idx] = resp
+		}(i)
+	}
+	wg.Wait()
+	ans := keygenResult[0]
+	for _, el := range keygenResult {
+		c.Assert(el.Equals(ans), Equals, true)
+	}
+}
+
 func (s *TssKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 	sort.Strings(testPubKeys)
 	req := NewRequest(testPubKeys)

@@ -40,5 +40,5 @@ func (THORChainTSSMessageTypeSuite) TestWireMessage(c *C) {
 		Message:   nil,
 	}
 	cacheKey := wm.GetCacheKey()
-	c.Assert(cacheKey, Equals, "1-hello")
+	c.Assert(cacheKey, Equals, "1-all-hello")
 }

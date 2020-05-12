@@ -20,6 +20,7 @@ import (
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 
 	"gitlab.com/thorchain/tss/go-tss/blame"
+	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/messages"
 	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
@@ -120,6 +121,23 @@ func BytesToHashString(msg []byte) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+func (t *TssCommon) doUpdateBytes(partyInfo *PartyInfo, partyID *btss.PartyID, wireMsg *messages.WireMessage) error {
+	if _, err := partyInfo.Party.UpdateFromBytes(wireMsg.Message, partyID, wireMsg.Routing.IsBroadcast); nil != err {
+		blamePk, errBlame := t.blameMgr.TssWrongShareBlame(wireMsg)
+		if errBlame != nil {
+			t.logger.Error().Err(err).Msgf("error in get the blame nodes")
+			t.blameMgr.GetBlame().SetBlame(blame.HashCheckFail, nil)
+			return fmt.Errorf("error in getting the blame nodes ")
+		}
+		// This error indicates the share is wrong, we include this signature to prove that
+		// this incorrect share is from the share owner.
+		blameNode := blame.NewNode(blamePk, wireMsg.Message, wireMsg.Sig)
+		t.blameMgr.GetBlame().SetBlame(blame.HashCheckFail, []blame.Node{blameNode})
+		return fmt.Errorf("fail to set bytes to local party: %w", err)
+	}
+	return nil
+}
+
 // updateLocal will apply the wireMsg to local keygen/keysign party
 func (t *TssCommon) updateLocal(wireMsg *messages.WireMessage) error {
 	if wireMsg == nil || wireMsg.Routing == nil || wireMsg.Routing.From == nil {
@@ -135,29 +153,32 @@ func (t *TssCommon) updateLocal(wireMsg *messages.WireMessage) error {
 		return fmt.Errorf("get message from unknown party %s", partyID.Id)
 	}
 
-	dataOwnerPeerID, ok := t.PartyIDtoP2PID[wireMsg.Routing.From.Id]
 	if !ok {
 		t.logger.Error().Msg("fail to find the peer ID of this party")
 		return errors.New("fail to find the peer")
 	}
 	// here we log down this peer as the latest unicast peer
 	if !wireMsg.Routing.IsBroadcast {
-		t.blameMgr.SetLastUnicastPeer(dataOwnerPeerID, wireMsg.RoundInfo)
-	}
-	if _, err := partyInfo.Party.UpdateFromBytes(wireMsg.Message, partyID, wireMsg.Routing.IsBroadcast); nil != err {
-		blamePk, errBlame := t.blameMgr.TssWrongShareBlame(wireMsg)
-		if errBlame != nil {
-			t.logger.Error().Err(err).Msgf("error in get the blame nodes")
-			t.blameMgr.GetBlame().SetBlame(blame.HashCheckFail, nil)
-			return fmt.Errorf("error in getting the blame nodes ")
+
+		// if the message is the unicast and is sent to me, I need to decrypt first before apply
+		for _, el := range wireMsg.Routing.To {
+			if el.Id == t.partyInfo.Party.PartyID().Id {
+				sk := t.privateKey.(secp256k1.PrivKeySecp256k1)
+				planText, err := conversion.Decrypt(sk, wireMsg.Message)
+				if err != nil {
+					t.logger.Error().Err(err).Msg("fail to decrypt the unicast msg sent to me")
+					return err
+				}
+				wireMsg.Message = planText
+				return t.doUpdateBytes(partyInfo, partyID, wireMsg)
+			}
 		}
-		// This error indicates the share is wrong, we include this signature to prove that
-		// this incorrect share is from the share owner.
-		blameNode := blame.NewNode(blamePk, wireMsg.Message, wireMsg.Sig)
-		t.blameMgr.GetBlame().SetBlame(blame.HashCheckFail, []blame.Node{blameNode})
-		return fmt.Errorf("fail to set bytes to local party: %w", err)
+		// this unicast message is not sent to me
+		return nil
+
 	}
-	return nil
+
+	return t.doUpdateBytes(partyInfo, partyID, wireMsg)
 }
 
 func (t *TssCommon) checkDupAndUpdateVerMsg(bMsg *messages.BroadcastConfirmMessage, peerID string) bool {
@@ -294,19 +315,33 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 	if err != nil {
 		return fmt.Errorf("fail to get wire bytes: %w", err)
 	}
-
-	sig, err := generateSignature(buf, t.msgID, t.privateKey)
-	if err != nil {
-		t.logger.Error().Err(err).Msg("fail to generate the share's signature")
-		return err
+	if !r.IsBroadcast && len(r.To) != 1 {
+		t.logger.Error().Msg("unicast can only accept one peer a tine")
+		return errors.New("more than one node in unicast")
 	}
 
 	wireMsg := messages.WireMessage{
 		Routing:   r,
 		RoundInfo: msg.Type(),
 		Message:   buf,
-		Sig:       sig,
 	}
+	if !r.IsBroadcast {
+		dstKey := r.To[0].GetKey()
+		var pk secp256k1.PubKeySecp256k1
+		copy(pk[:], dstKey)
+		encryptedPayload, err := conversion.Encrypt(pk, buf)
+		if err != nil {
+			t.logger.Error().Err(err).Msg("fail to encrypt the unicast Msg")
+			return err
+		}
+		wireMsg.Message = encryptedPayload
+	}
+	sig, err := generateSignature(wireMsg.Message, t.msgID, t.privateKey)
+	if err != nil {
+		t.logger.Error().Err(err).Msg("fail to generate the share's signature")
+		return err
+	}
+	wireMsg.Sig = sig
 	wireMsgBytes, err := json.Marshal(wireMsg)
 	if err != nil {
 		return fmt.Errorf("fail to convert tss msg to wire bytes: %w", err)
@@ -316,28 +351,24 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		MsgID:       t.msgID,
 		Payload:     wireMsgBytes,
 	}
-	peerIDs := make([]peer.ID, 0)
-	if len(r.To) == 0 {
-		peerIDs = t.P2PPeers
-	} else {
-		for _, each := range r.To {
-			peerID, ok := t.PartyIDtoP2PID[each.Id]
-			if !ok {
-				t.logger.Error().Msg("error in find the P2P ID")
-				continue
-			}
-			peerIDs = append(peerIDs, peerID)
-		}
-	}
+
 	t.renderToP2P(&messages.BroadcastMsgChan{
 		WrappedMessage: wrappedMsg,
-		PeersID:        peerIDs,
+		PeersID:        t.P2PPeers,
 	})
 
 	return nil
 }
 
 func (t *TssCommon) applyShare(localCacheItem *LocalCacheItem, threshold int, key string, msgType messages.THORChainTSSMessageType) error {
+	if !localCacheItem.Msg.Routing.IsBroadcast {
+		if localCacheItem.Msg.Routing.To[0].Id != t.partyInfo.Party.PartyID().Id {
+			t.blameMgr.GetRoundMgr().Set(key, localCacheItem.Msg)
+			t.logger.Debug().Msgf("remove key in others unicast message: %s", key)
+			t.removeKey(key)
+			return nil
+		}
+	}
 	err := t.hashCheck(localCacheItem, threshold)
 	if err != nil {
 		if errors.Is(err, blame.ErrNotEnoughPeer) {
@@ -522,12 +553,6 @@ func (t *TssCommon) processTSSMsg(wireMsg *messages.WireMessage, msgType message
 	if !ok {
 		t.logger.Error().Msg("fail to verify the signature")
 		return errors.New("signature verify failed")
-	}
-
-	// for the unicast message, we only update it local party
-	if !wireMsg.Routing.IsBroadcast {
-		t.logger.Debug().Msgf("msg from %s to %+v", wireMsg.Routing.From, wireMsg.Routing.To)
-		return t.updateLocal(wireMsg)
 	}
 
 	// if not received the broadcast message , we save a copy locally , and then tell all others what we got

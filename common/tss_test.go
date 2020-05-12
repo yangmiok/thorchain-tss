@@ -171,7 +171,7 @@ func (t *TssTestSuite) testVerMsgDuplication(c *C, privKey tcrypto.PrivKey, tssC
 	testMsg := "testVerMsgDuplication"
 	roundInfo := "round testVerMsgDuplication"
 	tssCommonStruct.msgID = "123"
-	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
+	msgKey := fmt.Sprintf("%s-all-%s", senderID.Id, roundInfo)
 	wrappedMsg := fabricateTssMsg(c, privKey, senderID, roundInfo, testMsg, tssCommonStruct.msgID, messages.TSSKeyGenMsg)
 	err := tssCommonStruct.ProcessOneMessage(wrappedMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[1].Id].String())
 	c.Assert(err, IsNil)
@@ -217,7 +217,7 @@ func (t *TssTestSuite) testDropMsgOwner(c *C, privKey tcrypto.PrivKey, tssCommon
 	roundInfo := "round testDropMsgOwner"
 	msgHash, err := BytesToHashString([]byte(testMsg))
 	c.Assert(err, IsNil)
-	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
+	msgKey := fmt.Sprintf("%s-all-%s", senderID.Id, roundInfo)
 	senderMsg := fabricateTssMsg(c, privKey, senderID, roundInfo, testMsg, "123", messages.TSSKeyGenMsg)
 
 	senderPeer, err := conversion.GetPeerIDFromPartyID(senderID)
@@ -327,7 +327,7 @@ func (t *TssTestSuite) testVerMsgAndUpdateFromPeer(c *C, tssCommonStruct *TssCom
 	roundInfo := "round testVerMsgAndUpdate2"
 	msgHash, err := BytesToHashString([]byte(testMsg))
 	c.Assert(err, IsNil)
-	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
+	msgKey := fmt.Sprintf("%s-all-%s", senderID.Id, roundInfo)
 	// we send the verify message from the the same sender, Tss should only accept the first verify message
 	wrappedVerMsg := fabricateVerMsg(c, msgHash, msgKey)
 	err = tssCommonStruct.ProcessOneMessage(wrappedVerMsg, tssCommonStruct.PartyIDtoP2PID[partiesID[1].Id].String())
@@ -345,7 +345,7 @@ func (t *TssTestSuite) testVerMsgAndUpdate(c *C, tssCommonStruct *TssCommon, sen
 	roundInfo := "round testVerMsgAndUpdate"
 	msgHash, err := BytesToHashString([]byte(testMsg))
 	c.Assert(err, IsNil)
-	msgKey := fmt.Sprintf("%s-%s", senderID.Id, roundInfo)
+	msgKey := fmt.Sprintf("%s-all-%s", senderID.Id, roundInfo)
 	wrappedMsg := fabricateTssMsg(c, t.privKey, senderID, roundInfo, testMsg, "123", messages.TSSKeyGenMsg)
 	// you can pass any p2pID in Tss message
 	err = tssCommonStruct.ProcessOneMessage(wrappedMsg, tssCommonStruct.PartyIDtoP2PID[senderID.Id].String())

@@ -179,7 +179,6 @@ func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
 		}
 		c.Assert(signature, Equals, item.S+item.R)
 	}
-	// make sure we sign
 }
 
 func (s *FourNodeTestSuite) TestFailJoinParty(c *C) {

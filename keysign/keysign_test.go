@@ -287,32 +287,6 @@ func (s *TssKeysisgnTestSuite) TestSignMessageWithStop(c *C) {
 	wg.Wait()
 }
 
-func rejectSendToOnePeer(c *C, tssKeySign *TssKeySign, stopChan chan struct{}, targetPeers []peer.ID) {
-	for {
-		select {
-		case <-stopChan:
-			return
-		case <-time.After(time.Millisecond):
-			if tssKeySign.lastMsg != nil && len(tssKeySign.lastMsg.Type()) > 6 {
-				a := tssKeySign.lastMsg.Type()
-				index2 := strings.Index(a, "Message")
-				index1 := strings.Index(a, "SignRound")
-				round := a[index1+len("SignRound") : index2]
-				roundD, err := strconv.Atoi(round)
-				c.Assert(err, IsNil)
-				if roundD > 6 {
-					peersID := tssKeySign.tssCommonStruct.P2PPeers
-					sort.Slice(peersID, func(i, j int) bool {
-						return peersID[i].String() > peersID[j].String()
-					})
-					tssKeySign.tssCommonStruct.P2PPeers = targetPeers
-					return
-				}
-			}
-		}
-	}
-}
-
 func (s *TssKeysisgnTestSuite) TestSignMessageRejectOnePeer(c *C) {
 	if testing.Short() {
 		c.Skip("skip the test")
@@ -323,6 +297,8 @@ func (s *TssKeysisgnTestSuite) TestSignMessageRejectOnePeer(c *C) {
 	messageID, err := common.MsgToHashString([]byte(req.Message))
 	c.Assert(err, IsNil)
 	wg := sync.WaitGroup{}
+	lock := &sync.Mutex{}
+	keySignResult := make(map[int]*bc.SignatureData)
 	conf := common.TssConfig{
 		KeyGenTimeout:   10 * time.Second,
 		KeySignTimeout:  10 * time.Second,
@@ -351,15 +327,40 @@ func (s *TssKeysisgnTestSuite) TestSignMessageRejectOnePeer(c *C) {
 
 			localState, err := s.stateMgrs[idx].GetLocalState(req.PoolPubKey)
 			c.Assert(err, IsNil)
+			// since unicast now also support forwarding now, we can test a node reject sending both
+			// broadcast and unicast msg to a node
+			stopWg := &sync.WaitGroup{}
 			if idx == 1 {
-				go rejectSendToOnePeer(c, keysignIns, stopChan, s.targePeers)
+				stopWg.Add(1)
+				go func() {
+					stopWg.Done()
+					for {
+						time.Sleep(time.Millisecond * 10)
+						if len(keysignIns.tssCommonStruct.P2PPeers) > 0 {
+							keysignIns.tssCommonStruct.P2PPeers = s.targePeers
+							return
+						}
+					}
+				}()
 			}
-			_, err = keysignIns.SignMessage([]byte(req.Message), localState, req.SignerPubKeys)
-			fmt.Printf("%s------->last message %v, broadcast? %v", keysignIns.tssCommonStruct.GetLocalPeerID(), keysignIns.lastMsg.Type(), keysignIns.lastMsg.IsBroadcast())
+			sig, err := keysignIns.SignMessage([]byte(req.Message), localState, req.SignerPubKeys)
 			c.Assert(err, IsNil)
+			stopWg.Wait()
+			fmt.Printf("%s------->last message %v, broadcast? %v", keysignIns.tssCommonStruct.GetLocalPeerID(), keysignIns.lastMsg.Type(), keysignIns.lastMsg.IsBroadcast())
+			lock.Lock()
+			defer lock.Unlock()
+			keySignResult[idx] = sig
 		}(i)
 	}
 	wg.Wait()
+	var signature string
+	for _, item := range keySignResult {
+		if len(signature) == 0 {
+			signature = string(item.S) + string(item.R)
+			continue
+		}
+		c.Assert(signature, Equals, string(item.S)+string(item.R))
+	}
 }
 
 func (s *TssKeysisgnTestSuite) TearDownTest(c *C) {
