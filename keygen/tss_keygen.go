@@ -172,11 +172,13 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			var blameNodes []blame.Node
 			var err error
 			if !lastMsg.IsBroadcast() {
+				log.Error().Msg("broadcast blame--------------")
 				blameNodes, err = blameMgr.GetUnicastBlame(lastMsg.Type())
 				if err != nil {
 					tKeyGen.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
 			} else {
+				log.Error().Msg("unicast blame--------------")
 				blameNodes, err = blameMgr.GetBroadcastBlame(lastMsg.Type())
 				if err != nil {
 					tKeyGen.logger.Error().Err(err).Msg("error in get broadcast blame")

@@ -160,11 +160,13 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 			var blameNodes []blame.Node
 			var err error
 			if !lastMsg.IsBroadcast() {
+				log.Error().Msg("broadcast blame--------------")
 				blameNodes, err = tssCommonStruct.GetBlameMgr().GetUnicastBlame(lastMsg.Type())
 				if err != nil {
 					tKeySign.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
 			} else {
+				log.Error().Msg("unicast blame--------------")
 				if !tssCommonStruct.GetBlameMgr().GetBlame().AlreadyBlame() {
 					blameNodes, err = tssCommonStruct.GetBlameMgr().GetBroadcastBlame(lastMsg.Type())
 					if err != nil {
