@@ -214,9 +214,10 @@ func observeAndStop(c *C, tssKeySign *TssKeySign, stopChan chan struct{}) {
 		case <-stopChan:
 			return
 		case <-time.After(time.Millisecond):
-
-			if tssKeySign.lastMsg != nil && len(tssKeySign.lastMsg.Type()) > 4 {
-				a := tssKeySign.lastMsg.Type()
+			blameMgr := tssKeySign.tssCommonStruct.GetBlameMgr()
+			lastMsg := blameMgr.GetLastMsg()
+			if lastMsg != nil && len(lastMsg.Type()) > 4 {
+				a := lastMsg.Type()
 				index2 := strings.Index(a, "Message")
 				index1 := strings.Index(a, "SignRound")
 				round := a[index1+len("SignRound") : index2]
@@ -293,8 +294,9 @@ func rejectSendToOnePeer(c *C, tssKeySign *TssKeySign, stopChan chan struct{}, t
 		case <-stopChan:
 			return
 		case <-time.After(time.Millisecond):
-			if tssKeySign.lastMsg != nil && len(tssKeySign.lastMsg.Type()) > 6 {
-				a := tssKeySign.lastMsg.Type()
+			lastMsg := tssKeySign.tssCommonStruct.GetBlameMgr().GetLastMsg()
+			if lastMsg != nil && len(lastMsg.Type()) > 6 {
+				a := lastMsg.Type()
 				index2 := strings.Index(a, "Message")
 				index1 := strings.Index(a, "SignRound")
 				round := a[index1+len("SignRound") : index2]
@@ -355,7 +357,8 @@ func (s *TssKeysisgnTestSuite) TestSignMessageRejectOnePeer(c *C) {
 				go rejectSendToOnePeer(c, keysignIns, stopChan, s.targePeers)
 			}
 			_, err = keysignIns.SignMessage([]byte(req.Message), localState, req.SignerPubKeys)
-			fmt.Printf("%s------->last message %v, broadcast? %v", keysignIns.tssCommonStruct.GetLocalPeerID(), keysignIns.lastMsg.Type(), keysignIns.lastMsg.IsBroadcast())
+			lastMsg := keysignIns.tssCommonStruct.GetBlameMgr().GetLastMsg()
+			fmt.Printf("%s------->last message %v, broadcast? %v", keysignIns.tssCommonStruct.GetLocalPeerID(), lastMsg.Type(), lastMsg.IsBroadcast())
 			c.Assert(err, IsNil)
 		}(i)
 	}
