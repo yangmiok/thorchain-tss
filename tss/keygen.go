@@ -3,6 +3,8 @@ package tss
 import (
 	"sync/atomic"
 
+	"github.com/libp2p/go-libp2p-core/peer"
+
 	"gitlab.com/thorchain/tss/go-tss/blame"
 	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/keygen"
@@ -17,7 +19,14 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 	if err != nil {
 		return keygen.Response{}, err
 	}
-
+	var peersID []peer.ID
+	for _, el := range req.ChangedPeers {
+		node, err := peer.Decode(el)
+		if err != nil {
+			return keygen.Response{}, err
+		}
+		peersID = append(peersID, node)
+	}
 	keygenInstance := keygen.NewTssKeyGen(
 		t.p2pCommunication.GetLocalPeerID(),
 		t.conf,
@@ -27,7 +36,7 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 		t.preParams,
 		msgID,
 		t.stateManager,
-		t.privateKey)
+		t.privateKey, req.StopPhase, peersID)
 
 	keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 	t.p2pCommunication.SetSubscribe(messages.TSSKeyGenMsg, msgID, keygenMsgChannel)
