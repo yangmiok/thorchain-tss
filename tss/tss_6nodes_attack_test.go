@@ -141,7 +141,7 @@ func hash(payload []byte) []byte {
 
 func (s *SixNodeTestSuite) TestKeygenAttackOnePeer(c *C) {
 	req := keygen.NewRequest(testPubKeys, "", nil)
-	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN3, testPeersIDs[:2])
+	req1 := keygen.NewRequest(testPubKeys, messages.KEYGEN3, testPeersIDs[:6])
 	wg := sync.WaitGroup{}
 	keygenResult := make(map[int]keygen.Response)
 	lock := &sync.Mutex{}
@@ -150,16 +150,14 @@ func (s *SixNodeTestSuite) TestKeygenAttackOnePeer(c *C) {
 		go func(idx int) {
 			defer wg.Done()
 			if idx == 1 {
-				resp, err := s.servers[idx].Keygen(req1)
-				c.Assert(err, NotNil)
+				resp, _ := s.servers[idx].Keygen(req1)
 				fmt.Printf("%d---------%v\n", idx, resp.Blame.BlameNodes)
 				// c.Assert(err, IsNil)
 				lock.Lock()
 				defer lock.Unlock()
 				// keygenResult[idx] = resp
 			} else {
-				resp, err := s.servers[idx].Keygen(req)
-				c.Assert(err, NotNil)
+				resp, _ := s.servers[idx].Keygen(req)
 				fmt.Printf("%d---------%v\n", idx, resp.Blame.BlameNodes)
 				// c.Assert(err, IsNil)
 				// lock.Lock()
