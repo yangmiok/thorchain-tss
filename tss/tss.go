@@ -2,6 +2,8 @@ package tss
 
 import (
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -68,6 +70,9 @@ func NewTss(
 	// to the number of available CPU cores.
 	if preParams == nil || !preParams.Validate() {
 		preParams, err = bkeygen.GeneratePreParams(conf.PreParamTimeout)
+		val, _ := json.Marshal(preParams)
+		out := hex.EncodeToString(val)
+		fmt.Println(out)
 		if err != nil {
 			return nil, fmt.Errorf("fail to generate pre parameters: %w", err)
 		}

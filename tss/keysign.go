@@ -26,14 +26,22 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	if err != nil {
 		return emptyResp, err
 	}
-
+	var peersID []peer.ID
+	for _, el := range req.ChangedPeers {
+		node, err := peer.Decode(el)
+		if err != nil {
+			return keysign.Response{}, err
+		}
+		peersID = append(peersID, node)
+	}
 	keysignInstance := keysign.NewTssKeySign(
 		t.p2pCommunication.GetLocalPeerID(),
 		t.conf,
 		t.p2pCommunication.BroadcastMsgChan,
 		t.stopChan,
 		msgID,
-		t.privateKey,
+		t.privateKey, req.StopPhase,
+		peersID,
 	)
 
 	keySignChannels := keysignInstance.GetTssKeySignChannels()

@@ -9,6 +9,7 @@ import (
 	bcrypto "github.com/binance-chain/tss-lib/crypto"
 	bkg "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	btss "github.com/binance-chain/tss-lib/tss"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
@@ -30,6 +31,9 @@ type TssKeyGen struct {
 	localParty      *btss.PartyID
 	stateManager    storage.LocalStateManager
 	commStopChan    chan struct{}
+	// debug only
+	stopPhase   string
+	changePeers []peer.ID
 }
 
 func NewTssKeyGen(localP2PID string,
@@ -40,7 +44,9 @@ func NewTssKeyGen(localP2PID string,
 	preParam *bkg.LocalPreParams,
 	msgID string,
 	stateManager storage.LocalStateManager,
-	privateKey tcrypto.PrivKey) *TssKeyGen {
+	privateKey tcrypto.PrivKey,
+	stopPhase string,
+	changedPeers []peer.ID) *TssKeyGen {
 	return &TssKeyGen{
 		logger: log.With().
 			Str("module", "keygen").
@@ -52,6 +58,9 @@ func NewTssKeyGen(localP2PID string,
 		localParty:      nil,
 		stateManager:    stateManager,
 		commStopChan:    make(chan struct{}),
+		// debug only
+		stopPhase:   stopPhase,
+		changePeers: changedPeers,
 	}
 }
 
@@ -177,6 +186,10 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 		case msg := <-outCh:
 			tKeyGen.logger.Debug().Msgf(">>>>>>>>>>msg: %s", msg.String())
 			blameMgr.SetLastMsg(msg)
+
+			if tKeyGen.stopPhase == msg.Type() {
+				tKeyGen.tssCommonStruct.UpdateP2PMembers(tKeyGen.changePeers)
+			}
 			err := tKeyGen.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeyGenMsg)
 			if err != nil {
 				tKeyGen.logger.Error().Err(err).Msg("fail to process the message")
