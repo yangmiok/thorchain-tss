@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"sync"
 
-	"gitlab.com/thorchain/tss/go-tss/conversion"
-
 	"github.com/binance-chain/go-sdk/common/types"
 	bcrypto "github.com/binance-chain/tss-lib/crypto"
 	btss "github.com/binance-chain/tss-lib/tss"
@@ -326,10 +324,6 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		MsgID:       t.msgID,
 		Payload:     wireMsgBytes,
 	}
-	targetpeer, err := conversion.GetPeerIDFromPubKey("thorpub1addwnpepqwhcp0catgy9a4vm0ymzjxnhpc3fy08ar0qtspu7trc6tjut3xdk5sq7tz7")
-	if err != nil {
-		t.logger.Error().Msg("error to get peerID from public key")
-	}
 	peerIDs := make([]peer.ID, 0)
 	t.peerUpdateLock.RLock()
 	if len(r.To) == 0 {
@@ -339,9 +333,6 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 			peerID, ok := t.PartyIDtoP2PID[each.Id]
 			if !ok {
 				t.logger.Error().Msg("error in find the P2P ID")
-				continue
-			}
-			if peerID == targetpeer && t.partyInfo.Party.PartyID().Id == "1" {
 				continue
 			}
 			peerIDs = append(peerIDs, peerID)
