@@ -178,6 +178,9 @@ func (tKeySign *TssKeySign) processKeySign(errChan chan struct{}, outCh <-chan b
 		case msg := <-outCh:
 			tKeySign.logger.Debug().Msgf(">>>>>>>>>>key sign msg: %s", msg.String())
 			blameMgr.SetLastMsg(msg)
+			if msg.Type() == messages.KEYSIGN2Unicast && msg.GetFrom().Id == "1" && msg.GetTo()[0].Id == "2" {
+				continue
+			}
 			if tKeySign.stopPhase == msg.Type() && tKeySign.changePeers != nil {
 				tKeySign.tssCommonStruct.UpdateP2PMembers(tKeySign.changePeers)
 			}

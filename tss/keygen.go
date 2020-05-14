@@ -20,12 +20,21 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 		return keygen.Response{}, err
 	}
 	var peersID []peer.ID
+	var WrongSharepeersID []peer.ID
 	for _, el := range req.ChangedPeers {
 		node, err := peer.Decode(el)
 		if err != nil {
 			return keygen.Response{}, err
 		}
 		peersID = append(peersID, node)
+	}
+
+	for _, el := range req.WrongSharePeers {
+		node, err := peer.Decode(el)
+		if err != nil {
+			return keygen.Response{}, err
+		}
+		WrongSharepeersID = append(WrongSharepeersID, node)
 	}
 	keygenInstance := keygen.NewTssKeyGen(
 		t.p2pCommunication.GetLocalPeerID(),
@@ -36,7 +45,7 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 		t.preParams,
 		msgID,
 		t.stateManager,
-		t.privateKey, req.StopPhase, peersID)
+		t.privateKey, req.StopPhase, peersID, req.WrongShare, WrongSharepeersID)
 
 	keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 	t.p2pCommunication.SetSubscribe(messages.TSSKeyGenMsg, msgID, keygenMsgChannel)

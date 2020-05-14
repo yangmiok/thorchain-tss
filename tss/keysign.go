@@ -50,7 +50,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		t.p2pCommunication.BroadcastMsgChan,
 		t.stopChan,
 		msgID,
-		t.PrivateKey,
+		t.privateKey,
 		req.StopPhase, peersID, req.WrongShare, WrongSharepeersID,
 	)
 
