@@ -13,6 +13,10 @@ import (
 	"testing"
 	"time"
 
+	btss "github.com/binance-chain/tss-lib/tss"
+
+	"github.com/rs/zerolog/log"
+
 	"gitlab.com/thorchain/tss/go-tss/conversion"
 
 	bc "github.com/binance-chain/tss-lib/common"
@@ -214,9 +218,10 @@ func observeAndStop(c *C, tssKeySign *TssKeySign, stopChan chan struct{}) {
 		case <-stopChan:
 			return
 		case <-time.After(time.Millisecond):
-
-			if tssKeySign.lastMsg != nil && len(tssKeySign.lastMsg.Type()) > 4 {
-				a := tssKeySign.lastMsg.Type()
+			blameMgr := tssKeySign.tssCommonStruct.GetBlameMgr()
+			lastMsg := blameMgr.GetLastMsg()
+			if lastMsg != nil && len(lastMsg.Type()) > 4 {
+				a := lastMsg.Type()
 				index2 := strings.Index(a, "Message")
 				index1 := strings.Index(a, "SignRound")
 				round := a[index1+len("SignRound") : index2]
@@ -293,8 +298,9 @@ func rejectSendToOnePeer(c *C, tssKeySign *TssKeySign, stopChan chan struct{}, t
 		case <-stopChan:
 			return
 		case <-time.After(time.Millisecond):
-			if tssKeySign.lastMsg != nil && len(tssKeySign.lastMsg.Type()) > 6 {
-				a := tssKeySign.lastMsg.Type()
+			lastMsg := tssKeySign.tssCommonStruct.GetBlameMgr().GetLastMsg()
+			if lastMsg != nil && len(lastMsg.Type()) > 6 {
+				a := lastMsg.Type()
 				index2 := strings.Index(a, "Message")
 				index1 := strings.Index(a, "SignRound")
 				round := a[index1+len("SignRound") : index2]
@@ -324,8 +330,8 @@ func (s *TssKeysisgnTestSuite) TestSignMessageRejectOnePeer(c *C) {
 	c.Assert(err, IsNil)
 	wg := sync.WaitGroup{}
 	conf := common.TssConfig{
-		KeyGenTimeout:   10 * time.Second,
-		KeySignTimeout:  10 * time.Second,
+		KeyGenTimeout:   20 * time.Second,
+		KeySignTimeout:  20 * time.Second,
 		PreParamTimeout: 5 * time.Second,
 	}
 	for i := 0; i < s.partyNum; i++ {
@@ -355,7 +361,8 @@ func (s *TssKeysisgnTestSuite) TestSignMessageRejectOnePeer(c *C) {
 				go rejectSendToOnePeer(c, keysignIns, stopChan, s.targePeers)
 			}
 			_, err = keysignIns.SignMessage([]byte(req.Message), localState, req.SignerPubKeys)
-			fmt.Printf("%s------->last message %v, broadcast? %v", keysignIns.tssCommonStruct.GetLocalPeerID(), keysignIns.lastMsg.Type(), keysignIns.lastMsg.IsBroadcast())
+			lastMsg := keysignIns.tssCommonStruct.GetBlameMgr().GetLastMsg()
+			log.Info().Msgf("%s------->last message %v, broadcast? %v", keysignIns.tssCommonStruct.GetLocalPeerID(), lastMsg.Type(), lastMsg.IsBroadcast())
 			c.Assert(err, IsNil)
 		}(i)
 	}
@@ -371,4 +378,33 @@ func (s *TssKeysisgnTestSuite) TearDownTest(c *C) {
 	for _, item := range s.comms {
 		c.Assert(item.Stop(), IsNil)
 	}
+}
+
+func (s *TssKeysisgnTestSuite) TestCloseKeySignnotifyChannel(c *C) {
+	conf := common.TssConfig{}
+	keySignInstance := NewTssKeySign("", conf, nil, nil, "test", s.nodePrivKeys[0])
+
+	taskDone := messages.TssTaskNotifier{TaskDone: true}
+	taskDoneBytes, err := json.Marshal(taskDone)
+	c.Assert(err, IsNil)
+
+	msg := &messages.WrappedMessage{
+		MessageType: messages.TSSTaskDone,
+		MsgID:       "test",
+		Payload:     taskDoneBytes,
+	}
+	partyIdMap := make(map[string]*btss.PartyID)
+	partyIdMap["1"] = nil
+	partyIdMap["2"] = nil
+	fakePartyInfo := &common.PartyInfo{
+		Party:      nil,
+		PartyIDMap: partyIdMap,
+	}
+	keySignInstance.tssCommonStruct.SetPartyInfo(fakePartyInfo)
+	err = keySignInstance.tssCommonStruct.ProcessOneMessage(msg, "node1")
+	c.Assert(err, IsNil)
+	err = keySignInstance.tssCommonStruct.ProcessOneMessage(msg, "node2")
+	c.Assert(err, IsNil)
+	err = keySignInstance.tssCommonStruct.ProcessOneMessage(msg, "node1")
+	c.Assert(err, ErrorMatches, "duplicated notification from peer node1 ignored")
 }
