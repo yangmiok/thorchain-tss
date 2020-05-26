@@ -16,6 +16,7 @@ import (
 
 	"github.com/binance-chain/tss-lib/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	tcrypto "github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 
@@ -156,7 +157,7 @@ func getPreparams(c *C) []*btsskeygen.LocalPreParams {
 
 func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 	sort.Strings(testPubKeys)
-	req := NewRequest(testPubKeys)
+	req := NewRequest(testPubKeys, []string{"/p2p/tss/gg18"})
 	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
 	c.Assert(err, IsNil)
 	conf := common.TssConfig{
@@ -182,7 +183,7 @@ func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 				stopChan,
 				s.preParams[idx],
 				messageID,
-				s.stateMgrs[idx], s.nodePrivKeys[idx])
+				s.stateMgrs[idx], s.nodePrivKeys[idx], p2p.TSSProtocolGG18)
 			c.Assert(keygenInstance, NotNil)
 			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
@@ -207,9 +208,59 @@ func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 	}
 }
 
+func (s *TssKeygenTestSuite) TestGenerateNewKeyWithUnsupportedProtocol(c *C) {
+	sort.Strings(testPubKeys)
+	req := NewRequest(testPubKeys, []string{"/p2p/tss/gg18"})
+	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
+	c.Assert(err, IsNil)
+	conf := common.TssConfig{
+		KeyGenTimeout:   10 * time.Second,
+		KeySignTimeout:  60 * time.Second,
+		PreParamTimeout: 5 * time.Second,
+	}
+	wg := sync.WaitGroup{}
+	for i := 0; i < s.partyNum; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			comm := s.comms[idx]
+			stopChan := make(chan struct{})
+			localPubKey := testPubKeys[idx]
+			var proto protocol.ID
+			if idx == 2 {
+				proto = p2p.TSSProtocolGG18
+			} else {
+				proto = p2p.TSSProtocolGG20
+			}
+			keygenInstance := NewTssKeyGen(
+				comm.GetLocalPeerID(),
+				conf,
+				localPubKey,
+				comm.BroadcastMsgChan,
+				stopChan,
+				s.preParams[idx],
+				messageID,
+				s.stateMgrs[idx], s.nodePrivKeys[idx], proto)
+			c.Assert(keygenInstance, NotNil)
+			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
+			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSKeyGenVerMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSControlMsg, messageID, keygenMsgChannel)
+			comm.SetSubscribe(messages.TSSTaskDone, messageID, keygenMsgChannel)
+			defer comm.CancelSubscribe(messages.TSSKeyGenMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSKeyGenVerMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSControlMsg, messageID)
+			defer comm.CancelSubscribe(messages.TSSTaskDone, messageID)
+			_, err := keygenInstance.GenerateNewKey(req)
+			c.Assert(err, NotNil)
+		}(i)
+	}
+	wg.Wait()
+}
+
 func (s *TssKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 	sort.Strings(testPubKeys)
-	req := NewRequest(testPubKeys)
+	req := NewRequest(testPubKeys, []string{"/p2p/tss/gg18"})
 	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
 	c.Assert(err, IsNil)
 	conf := common.TssConfig{
@@ -235,7 +286,7 @@ func (s *TssKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 				s.preParams[idx],
 				messageID,
 				s.stateMgrs[idx],
-				s.nodePrivKeys[idx])
+				s.nodePrivKeys[idx], p2p.TSSProtocolGG18)
 			c.Assert(keygenInstance, NotNil)
 			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
@@ -271,7 +322,7 @@ func (s *TssKeygenTestSuite) TestKeyGenWithError(c *C) {
 	}
 	conf := common.TssConfig{}
 	stateManager := &storage.MockLocalStateManager{}
-	keyGenInstance := NewTssKeyGen("", conf, "", nil, nil, nil, "test", stateManager, s.nodePrivKeys[0])
+	keyGenInstance := NewTssKeyGen("", conf, "", nil, nil, nil, "test", stateManager, s.nodePrivKeys[0], p2p.TSSProtocolGG18)
 	generatedKey, err := keyGenInstance.GenerateNewKey(req)
 	c.Assert(err, NotNil)
 	c.Assert(generatedKey, IsNil)
@@ -280,8 +331,7 @@ func (s *TssKeygenTestSuite) TestKeyGenWithError(c *C) {
 func (s *TssKeygenTestSuite) TestCloseKeyGennotifyChannel(c *C) {
 	conf := common.TssConfig{}
 	stateManager := &storage.MockLocalStateManager{}
-	keyGenInstance := NewTssKeyGen("", conf, "", nil, nil, nil, "test", stateManager, s.nodePrivKeys[0])
-
+	keyGenInstance := NewTssKeyGen("", conf, "", nil, nil, nil, "test", stateManager, s.nodePrivKeys[0], p2p.TSSProtocolGG18)
 	taskDone := messages.TssTaskNotifier{TaskDone: true}
 	taskDoneBytes, err := json.Marshal(taskDone)
 	c.Assert(err, IsNil)
@@ -290,6 +340,7 @@ func (s *TssKeygenTestSuite) TestCloseKeyGennotifyChannel(c *C) {
 		MessageType: messages.TSSTaskDone,
 		MsgID:       "test",
 		Payload:     taskDoneBytes,
+		Proto:       protocol.ConvertToStrings([]protocol.ID{p2p.TSSProtocolGG18})[0],
 	}
 	partyIdMap := make(map[string]*btss.PartyID)
 	partyIdMap["1"] = nil

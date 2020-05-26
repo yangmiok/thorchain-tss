@@ -1,7 +1,10 @@
 package conversion
 
 import (
+	"errors"
 	"math/rand"
+	"sort"
+	"strconv"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	atypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -38,4 +41,34 @@ func RandStringBytesMask(n int) string {
 		}
 	}
 	return string(b)
+}
+
+func GetHighestFreq(in map[string]string) (string, int, error) {
+	if len(in) == 0 {
+		return "", 0, errors.New("empty input")
+	}
+	freq := make(map[string]int, len(in))
+	hashPeerMap := make(map[string]string, len(in))
+	for peer, n := range in {
+		freq[n]++
+		hashPeerMap[n] = peer
+	}
+
+	sFreq := make([][2]string, 0, len(freq))
+	for n, f := range freq {
+		sFreq = append(sFreq, [2]string{n, strconv.FormatInt(int64(f), 10)})
+	}
+	sort.Slice(sFreq, func(i, j int) bool {
+		if sFreq[i][1] > sFreq[j][1] {
+			return true
+		} else {
+			return false
+		}
+	},
+	)
+	freqInt, err := strconv.Atoi(sFreq[0][1])
+	if err != nil {
+		return "", 0, err
+	}
+	return sFreq[0][0], freqInt, nil
 }

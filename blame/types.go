@@ -7,10 +7,11 @@ import (
 )
 
 const (
-	HashCheckFail = "hash check failed"
-	TssTimeout    = "Tss timeout"
-	TssSyncFail   = "signers fail to sync before keygen/keysign"
-	InternalError = "fail to start the join party "
+	HashCheckFail       = "hash check failed"
+	TssTimeout          = "Tss timeout"
+	TssSyncFail         = "signers fail to sync before keygen/keysign"
+	InternalError       = "fail to start the join party "
+	UnsupportedProtocol = "unsupported protocol"
 )
 
 var (

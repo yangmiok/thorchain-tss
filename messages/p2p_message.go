@@ -48,6 +48,7 @@ type WrappedMessage struct {
 	MessageType THORChainTSSMessageType `json:"message_type"`
 	MsgID       string                  `json:"message_id"`
 	Payload     []byte                  `json:"payload"`
+	Proto       string                  `json:"protocol"`
 }
 
 // BroadcastMsgChan is the channel structure for keygen/keysign submit message to p2p network

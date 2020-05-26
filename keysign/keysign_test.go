@@ -14,6 +14,7 @@ import (
 	"time"
 
 	btss "github.com/binance-chain/tss-lib/tss"
+	"github.com/libp2p/go-libp2p-core/protocol"
 
 	"github.com/rs/zerolog/log"
 
@@ -158,7 +159,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 		return
 	}
 	sort.Strings(testPubKeys)
-	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys)
+	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys, []string{"/p2p/tss/gg18"})
 	messageID, err := common.MsgToHashString([]byte(req.Message))
 	c.Assert(err, IsNil)
 	wg := sync.WaitGroup{}
@@ -180,7 +181,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 				conf,
 				comm.BroadcastMsgChan,
 				stopChan, messageID,
-				s.nodePrivKeys[idx])
+				s.nodePrivKeys[idx], p2p.TSSProtocolGG18)
 			keysignMsgChannel := keysignIns.GetTssKeySignChannels()
 
 			comm.SetSubscribe(messages.TSSKeySignMsg, messageID, keysignMsgChannel)
@@ -242,7 +243,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessageWithStop(c *C) {
 		return
 	}
 	sort.Strings(testPubKeys)
-	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys)
+	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys, []string{"/p2p/tss/gg18"})
 	messageID, err := common.MsgToHashString([]byte(req.Message))
 	c.Assert(err, IsNil)
 	wg := sync.WaitGroup{}
@@ -262,7 +263,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessageWithStop(c *C) {
 				conf,
 				comm.BroadcastMsgChan,
 				stopChan, messageID,
-				s.nodePrivKeys[idx])
+				s.nodePrivKeys[idx], p2p.TSSProtocolGG18)
 			keysignMsgChannel := keysignIns.GetTssKeySignChannels()
 
 			comm.SetSubscribe(messages.TSSKeySignMsg, messageID, keysignMsgChannel)
@@ -325,7 +326,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessageRejectOnePeer(c *C) {
 		return
 	}
 	sort.Strings(testPubKeys)
-	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys)
+	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys, []string{"/p2p/tss/gg18"})
 	messageID, err := common.MsgToHashString([]byte(req.Message))
 	c.Assert(err, IsNil)
 	wg := sync.WaitGroup{}
@@ -343,7 +344,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessageRejectOnePeer(c *C) {
 			keysignIns := NewTssKeySign(comm.GetLocalPeerID(),
 				conf,
 				comm.BroadcastMsgChan,
-				stopChan, messageID, s.nodePrivKeys[idx])
+				stopChan, messageID, s.nodePrivKeys[idx], p2p.TSSProtocolGG18)
 			keysignMsgChannel := keysignIns.GetTssKeySignChannels()
 
 			comm.SetSubscribe(messages.TSSKeySignMsg, messageID, keysignMsgChannel)
@@ -382,7 +383,7 @@ func (s *TssKeysisgnTestSuite) TearDownTest(c *C) {
 
 func (s *TssKeysisgnTestSuite) TestCloseKeySignnotifyChannel(c *C) {
 	conf := common.TssConfig{}
-	keySignInstance := NewTssKeySign("", conf, nil, nil, "test", s.nodePrivKeys[0])
+	keySignInstance := NewTssKeySign("", conf, nil, nil, "test", s.nodePrivKeys[0], p2p.TSSProtocolGG18)
 
 	taskDone := messages.TssTaskNotifier{TaskDone: true}
 	taskDoneBytes, err := json.Marshal(taskDone)
@@ -392,6 +393,7 @@ func (s *TssKeysisgnTestSuite) TestCloseKeySignnotifyChannel(c *C) {
 		MessageType: messages.TSSTaskDone,
 		MsgID:       "test",
 		Payload:     taskDoneBytes,
+		Proto:       protocol.ConvertToStrings([]protocol.ID{p2p.TSSProtocolGG18})[0],
 	}
 	partyIdMap := make(map[string]*btss.PartyID)
 	partyIdMap["1"] = nil

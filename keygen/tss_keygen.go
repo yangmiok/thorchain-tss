@@ -9,6 +9,7 @@ import (
 	bcrypto "github.com/binance-chain/tss-lib/crypto"
 	bkg "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	btss "github.com/binance-chain/tss-lib/tss"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
@@ -40,14 +41,14 @@ func NewTssKeyGen(localP2PID string,
 	preParam *bkg.LocalPreParams,
 	msgID string,
 	stateManager storage.LocalStateManager,
-	privateKey tcrypto.PrivKey) *TssKeyGen {
+	privateKey tcrypto.PrivKey, proto protocol.ID) *TssKeyGen {
 	return &TssKeyGen{
 		logger: log.With().
 			Str("module", "keygen").
 			Str("msgID", msgID).Logger(),
 		localNodePubKey: localNodePubKey,
 		preParams:       preParam,
-		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, privateKey),
+		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, privateKey, proto),
 		stopChan:        stopChan,
 		localParty:      nil,
 		stateManager:    stateManager,
@@ -121,7 +122,7 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq Request) (*bcrypto.ECPoint, e
 	r, err := tKeyGen.processKeyGen(errChan, outCh, endCh, keyGenLocalStateItem)
 	if err != nil {
 		close(tKeyGen.commStopChan)
-		return nil, fmt.Errorf("fail to process key sign: %w", err)
+		return nil, fmt.Errorf("fail to process key gen: %w", err)
 	}
 	select {
 	case <-time.After(time.Second * 5):

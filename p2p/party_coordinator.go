@@ -11,6 +11,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -76,7 +77,7 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 		pc.logger.Info().Msg("this party is not ready")
 		return
 	}
-	newFound, err := peerGroup.updatePeer(remotePeer)
+	newFound, err := peerGroup.updatePeer(remotePeer, msg.Protocols)
 	if err != nil {
 		pc.logger.Error().Err(err).Msg("receive msg from unknown peer")
 		return
@@ -160,12 +161,31 @@ func (pc *PartyCoordinator) sendRequestToPeer(msg *messages.JoinPartyRequest, re
 	return nil
 }
 
+func (pc *PartyCoordinator) getNegotiateProtocol(msgID string) (protocol.ID, error) {
+	pc.joinPartyGroupLock.Lock()
+	peerGroup, ok := pc.peersGroup[msgID]
+	pc.joinPartyGroupLock.Unlock()
+	if !ok {
+		return "", errors.New("the related parties cannot be found")
+	}
+	proto, err := peerGroup.getProtocol()
+	if err != nil {
+		return "", err
+	}
+	for _, el := range TssProtocols {
+		if el == proto {
+			return el, nil
+		}
+	}
+	return "", errors.New("protocol not supported yet")
+}
+
 // JoinPartyWithRetry this method provide the functionality to join party with retry and back off
-func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, peers []string) ([]peer.ID, error) {
+func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, peers []string) ([]peer.ID, protocol.ID, error) {
 	peerGroup, err := pc.createJoinPartyGroups(msg.ID, peers)
 	if err != nil {
 		pc.logger.Error().Err(err).Msg("fail to create the join party group")
-		return nil, err
+		return nil, "", err
 	}
 	defer pc.removePeerGroup(msg.ID)
 	_, offline := peerGroup.getPeersStatus()
@@ -210,7 +230,13 @@ func (pc *PartyCoordinator) JoinPartyWithRetry(msg *messages.JoinPartyRequest, p
 	// we always set ourselves as online
 	onlinePeers = append(onlinePeers, pc.host.ID())
 	if len(onlinePeers) == len(peers) {
-		return onlinePeers, nil
+		proto, err := pc.getNegotiateProtocol(msg.ID)
+		if err != nil {
+			pc.logger.Error().Err(err).Msg("fail to negotiate the protocol")
+			return nil, "", err
+		}
+		return onlinePeers, proto, nil
 	}
-	return onlinePeers, errJoinPartyTimeout
+
+	return onlinePeers, "", errJoinPartyTimeout
 }

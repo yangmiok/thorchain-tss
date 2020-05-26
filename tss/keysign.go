@@ -34,6 +34,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		t.stopChan,
 		msgID,
 		t.privateKey,
+		"",
 	)
 
 	keySignChannels := keysignInstance.GetTssKeySignChannels()
@@ -92,7 +93,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		return emptyResp, fmt.Errorf("fail to convert pub keys to peer id:%w", err)
 	}
 
-	onlinePeers, err := t.joinParty(msgID, req.SignerPubKeys)
+	onlinePeers, proto, err := t.joinParty(msgID, req.SignerPubKeys, req.Protos)
 	if err != nil {
 		if onlinePeers == nil {
 			t.logger.Error().Err(err).Msg("error before we start join party")
@@ -117,6 +118,8 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 
 	}
 
+	t.logger.Info().Msg("keysign party formed")
+	keysignInstance.GetTssCommonStruct().SetProto(proto)
 	signatureData, err := keysignInstance.SignMessage(msgToSign, localStateItem, req.SignerPubKeys)
 	// the statistic of keygen only care about Tss it self, even if the following http response aborts,
 	// it still counted as a successful keygen as the Tss model runs successfully.
