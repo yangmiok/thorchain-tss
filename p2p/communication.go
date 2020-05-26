@@ -27,7 +27,10 @@ import (
 var joinPartyProtocol protocol.ID = "/p2p/join-party"
 
 // TSSProtocolID protocol id used for tss
-var TSSProtocolID protocol.ID = "/p2p/tss"
+const (
+	TSSProtocolGG18 protocol.ID = "/p2p/tss/gg18"
+	TSSProtocolGG20 protocol.ID = "/p2p/tss/gg20"
+)
 
 const (
 	// TimeoutConnecting maximum time for wait for peers to connect
@@ -86,33 +89,33 @@ func (c *Communication) GetLocalPeerID() string {
 }
 
 // Broadcast message to Peers
-func (c *Communication) Broadcast(peers []peer.ID, msg []byte) {
+func (c *Communication) Broadcast(peers []peer.ID, msg []byte, proto string) {
 	if len(peers) == 0 {
 		return
 	}
 	// try to discover all peers and then broadcast the messages
 	c.wg.Add(1)
-	go c.broadcastToPeers(peers, msg)
+	go c.broadcastToPeers(peers, msg, proto)
 }
 
-func (c *Communication) broadcastToPeers(peers []peer.ID, msg []byte) {
+func (c *Communication) broadcastToPeers(peers []peer.ID, msg []byte, proto string) {
 	defer c.wg.Done()
 	defer func() {
 		c.logger.Debug().Msgf("finished sending message to peer(%v)", peers)
 	}()
 	for _, p := range peers {
-		if err := c.writeToStream(p, msg); nil != err {
+		if err := c.writeToStream(p, msg, proto); nil != err {
 			c.logger.Error().Err(err).Msg("fail to write to stream")
 		}
 	}
 }
 
-func (c *Communication) writeToStream(pID peer.ID, msg []byte) error {
+func (c *Communication) writeToStream(pID peer.ID, msg []byte, proto string) error {
 	// don't send to ourself
 	if pID == c.host.ID() {
 		return nil
 	}
-	stream, err := c.connectToOnePeer(pID)
+	stream, err := c.connectToOnePeer(pID, proto)
 	if err != nil {
 		return fmt.Errorf("fail to open stream to peer(%s): %w", pID, err)
 	}
@@ -225,7 +228,8 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	}
 	c.host = h
 	c.logger.Info().Msgf("Host created, we are: %s, at: %s", h.ID(), h.Addrs())
-	h.SetStreamHandler(TSSProtocolID, c.handleStream)
+	h.SetStreamHandler(TSSProtocolGG18, c.handleStream)
+	h.SetStreamHandler(TSSProtocolGG20, c.handleStream)
 	// Start a DHT, for use in peer discovery. We can't just make a new DHT
 	// client because we want each peer to maintain its own local copy of the
 	// DHT, so that the bootstrapping node of the DHT can go down without
@@ -256,7 +260,7 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	return nil
 }
 
-func (c *Communication) connectToOnePeer(pID peer.ID) (network.Stream, error) {
+func (c *Communication) connectToOnePeer(pID peer.ID, proto string) (network.Stream, error) {
 	c.logger.Debug().Msgf("peer:%s,current:%s", pID, c.host.ID())
 	// dont connect to itself
 	if pID == c.host.ID() {
@@ -265,7 +269,8 @@ func (c *Communication) connectToOnePeer(pID peer.ID) (network.Stream, error) {
 	c.logger.Debug().Msgf("connect to peer : %s", pID.String())
 	ctx, cancel := context.WithTimeout(context.Background(), TimeoutConnecting)
 	defer cancel()
-	stream, err := c.host.NewStream(ctx, pID, TSSProtocolID)
+	protocolID := protocol.ConvertFromStrings([]string{proto})
+	stream, err := c.host.NewStream(ctx, pID, protocolID[0])
 	if err != nil {
 		return nil, fmt.Errorf("fail to create new stream to peer: %s, %w", pID, err)
 	}
@@ -367,13 +372,14 @@ func (c *Communication) ProcessBroadcast() {
 	for {
 		select {
 		case msg := <-c.BroadcastMsgChan:
+			proto := msg.Proto
 			wrappedMsgBytes, err := json.Marshal(msg.WrappedMessage)
 			if err != nil {
 				c.logger.Error().Err(err).Msg("fail to marshal a wrapped message to json bytes")
 				continue
 			}
 			c.logger.Debug().Msgf("broadcast message %s to %+v", msg.WrappedMessage, msg.PeersID)
-			c.Broadcast(msg.PeersID, wrappedMsgBytes)
+			c.Broadcast(msg.PeersID, wrappedMsgBytes, proto)
 
 		case <-c.stopChan:
 			return

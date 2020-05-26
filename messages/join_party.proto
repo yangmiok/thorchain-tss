@@ -3,6 +3,7 @@ package messages;
 
 message JoinPartyRequest {
     string ID = 1; // the unique hash id
+    string Protocol = 2; // the protocol for the join party
 }
 
 message JoinPartyResponse {

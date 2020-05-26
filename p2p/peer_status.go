@@ -9,6 +9,7 @@ import (
 
 type PeerStatus struct {
 	peersResponse  map[peer.ID]bool
+	peerProtocol   map[peer.ID]string
 	peerStatusLock *sync.RWMutex
 	newFound       chan bool
 }
@@ -23,6 +24,7 @@ func NewPeerStatus(peerNodes []peer.ID, myPeerID peer.ID) *PeerStatus {
 	}
 	peerStatus := &PeerStatus{
 		peersResponse:  dat,
+		peerProtocol:   make(map[peer.ID]string),
 		peerStatusLock: &sync.RWMutex{},
 		newFound:       make(chan bool, len(peerNodes)),
 	}

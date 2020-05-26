@@ -54,6 +54,7 @@ type WrappedMessage struct {
 type BroadcastMsgChan struct {
 	WrappedMessage WrappedMessage
 	PeersID        []peer.ID
+	Proto          string
 }
 
 // BroadcastConfirmMessage is used to broadcast to all parties what message they receive
