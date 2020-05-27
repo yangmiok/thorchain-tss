@@ -14,12 +14,14 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 
 	"gitlab.com/thorchain/tss/go-tss/blame"
+	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/messages"
 	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
@@ -47,9 +49,10 @@ type TssCommon struct {
 	taskDone            chan struct{}
 	blameMgr            *blame.Manager
 	finishedPeers       map[string]bool
+	agreedProto         protocol.ID
 }
 
-func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgChan, conf TssConfig, msgID string, privKey tcrypto.PrivKey) *TssCommon {
+func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgChan, conf TssConfig, msgID string, privKey tcrypto.PrivKey, proto protocol.ID) *TssCommon {
 	return &TssCommon{
 		conf:                conf,
 		logger:              log.With().Str("module", "tsscommon").Logger(),
@@ -67,6 +70,7 @@ func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgCha
 		taskDone:            make(chan struct{}),
 		blameMgr:            blame.NewBlameManager(),
 		finishedPeers:       make(map[string]bool),
+		agreedProto:         proto,
 	}
 }
 
@@ -95,6 +99,10 @@ func (t *TssCommon) SetPartyInfo(partyInfo *PartyInfo) {
 	t.partyLock.Lock()
 	defer t.partyLock.Unlock()
 	t.partyInfo = partyInfo
+}
+
+func (t *TssCommon) SetProto(proto protocol.ID) {
+	t.agreedProto = proto
 }
 
 func (t *TssCommon) getPartyInfo() *PartyInfo {
@@ -183,6 +191,9 @@ func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerI
 	if nil == wrappedMsg {
 		return errors.New("invalid wireMessage")
 	}
+	if wrappedMsg.Proto != protocol.ConvertToStrings([]protocol.ID{t.agreedProto})[0] {
+		return errors.New("tss protocol is not supported")
+	}
 
 	switch wrappedMsg.MessageType {
 	case messages.TSSKeyGenMsg, messages.TSSKeySignMsg:
@@ -242,7 +253,7 @@ func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerI
 }
 
 func (t *TssCommon) getMsgHash(localCacheItem *LocalCacheItem, threshold int) (string, error) {
-	hash, freq, err := getHighestFreq(localCacheItem.ConfirmedList)
+	hash, freq, err := conversion.GetHighestFreq(localCacheItem.ConfirmedList)
 	if err != nil {
 		t.logger.Error().Err(err).Msg("fail to get the hash freq")
 		return "", blame.ErrHashCheck
@@ -315,6 +326,7 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		MessageType: msgType,
 		MsgID:       t.msgID,
 		Payload:     wireMsgBytes,
+		Proto:       protocol.ConvertToStrings([]protocol.ID{t.agreedProto})[0],
 	}
 	peerIDs := make([]peer.ID, 0)
 	if len(r.To) == 0 {
@@ -464,6 +476,7 @@ func (t *TssCommon) broadcastHashToPeers(key, msgHash string, peerIDs []peer.ID,
 		MessageType: msgType,
 		MsgID:       t.msgID,
 		Payload:     buf,
+		Proto:       protocol.ConvertToStrings([]protocol.ID{t.agreedProto})[0],
 	}
 	t.renderToP2P(&messages.BroadcastMsgChan{
 		WrappedMessage: p2pWrappedMSg,

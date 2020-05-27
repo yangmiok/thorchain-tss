@@ -3,6 +3,7 @@ package common
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 	. "gopkg.in/check.v1"
 
@@ -13,26 +14,6 @@ import (
 type tssHelpSuite struct{}
 
 var _ = Suite(&tssHelpSuite{})
-
-func (t *tssHelpSuite) TestGetHashToBroadcast(c *C) {
-	testMap := make(map[string]string)
-	_, _, err := getHighestFreq(testMap)
-	c.Assert(err, NotNil)
-	_, _, err = getHighestFreq(nil)
-	c.Assert(err, NotNil)
-	testMap["1"] = "aa"
-	testMap["2"] = "aa"
-	testMap["3"] = "aa"
-	testMap["4"] = "ab"
-	testMap["5"] = "bb"
-	testMap["6"] = "bb"
-	testMap["7"] = "bc"
-	testMap["8"] = "cd"
-	val, freq, err := getHighestFreq(testMap)
-	c.Assert(err, IsNil)
-	c.Assert(val, Equals, "aa")
-	c.Assert(freq, Equals, 3)
-}
 
 func (t *tssHelpSuite) TestMsgSignAndVerification(c *C) {
 	msg := []byte("hello")
@@ -59,7 +40,7 @@ func (t *tssHelpSuite) TestTssCommon_NotifyTaskDone(c *C) {
 	peerID, err := conversion.GetPeerIDFromSecp256PubKey(pk.(secp256k1.PubKeySecp256k1))
 	c.Assert(err, IsNil)
 	sk := secp256k1.GenPrivKey()
-	tssCommon := NewTssCommon(peerID.String(), nil, TssConfig{}, "message-id", sk)
+	tssCommon := NewTssCommon(peerID.String(), nil, TssConfig{}, "message-id", sk, protocol.TestingID)
 	err = tssCommon.NotifyTaskDone()
 	c.Assert(err, IsNil)
 }
@@ -72,7 +53,7 @@ func (t *tssHelpSuite) TestTssCommon_processRequestMsgFromPeer(c *C) {
 	sk := secp256k1.GenPrivKey()
 	testPeer, err := peer.Decode("16Uiu2HAm2FzqoUdS6Y9Esg2EaGcAG5rVe1r6BFNnmmQr2H3bqafa")
 	c.Assert(err, IsNil)
-	tssCommon := NewTssCommon(peerID.String(), nil, TssConfig{}, "message-id", sk)
+	tssCommon := NewTssCommon(peerID.String(), nil, TssConfig{}, "message-id", sk, protocol.TestingID)
 	err = tssCommon.processRequestMsgFromPeer([]peer.ID{testPeer}, nil, true)
 	c.Assert(err, IsNil)
 	err = tssCommon.processRequestMsgFromPeer([]peer.ID{testPeer}, nil, false)

@@ -14,6 +14,7 @@ import (
 	btsskeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	btss "github.com/binance-chain/tss-lib/tss"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	tcrypto "github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 	. "gopkg.in/check.v1"
@@ -118,7 +119,7 @@ func (t *TssTestSuite) TestTssProcessOutCh(c *C) {
 	}
 	msg := btss.NewMessageWrapper(messageRouting, testContent)
 	tssMsg := btss.NewMessage(messageRouting, testContent, msg)
-	tssCommonStruct := NewTssCommon("", nil, conf, "test", t.privKey)
+	tssCommonStruct := NewTssCommon("", nil, conf, "test", t.privKey, protocol.TestingID)
 	err = tssCommonStruct.ProcessOutCh(tssMsg, messages.TSSKeyGenMsg)
 	c.Assert(err, IsNil)
 }
@@ -148,6 +149,7 @@ func fabricateTssMsg(c *C, privKey tcrypto.PrivKey, partyID *btss.PartyID, round
 	wrappedMsg := messages.WrappedMessage{
 		MessageType: msgType,
 		Payload:     marshaledMsg,
+		Proto:       protocol.ConvertToStrings([]protocol.ID{protocol.TestingID})[0],
 	}
 	return &wrappedMsg
 }
@@ -163,6 +165,7 @@ func fabricateVerMsg(c *C, hash, hashKey string) *messages.WrappedMessage {
 	wrappedMsg := messages.WrappedMessage{
 		MessageType: messages.TSSKeyGenVerMsg,
 		Payload:     marshaledMsg,
+		Proto:       protocol.ConvertToStrings([]protocol.ID{protocol.TestingID})[0],
 	}
 	return &wrappedMsg
 }
@@ -184,7 +187,7 @@ func (t *TssTestSuite) testVerMsgDuplication(c *C, privKey tcrypto.PrivKey, tssC
 
 func setupProcessVerMsgEnv(c *C, privKey tcrypto.PrivKey, keyPool []string, partyNum int) (*TssCommon, []*btss.PartyID, []*btss.PartyID) {
 	conf := TssConfig{}
-	tssCommonStruct := NewTssCommon("", nil, conf, "test", privKey)
+	tssCommonStruct := NewTssCommon("", nil, conf, "test", privKey, protocol.TestingID)
 	localTestPubKeys := make([]string, partyNum)
 	copy(localTestPubKeys, keyPool[:partyNum])
 	// for the test, we choose the first pubic key as the test instance public key
@@ -263,6 +266,7 @@ func (t *TssTestSuite) testProcessControlMsg(c *C, tssCommonStruct *TssCommon, s
 	wrappedMsg := messages.WrappedMessage{
 		MessageType: messages.TSSControlMsg,
 		Payload:     payload,
+		Proto:       protocol.ConvertToStrings([]protocol.ID{protocol.TestingID})[0],
 	}
 
 	err = tssCommonStruct.ProcessOneMessage(&wrappedMsg, "1")
@@ -288,6 +292,7 @@ func (t *TssTestSuite) testProcessControlMsg(c *C, tssCommonStruct *TssCommon, s
 	wrappedMsg = messages.WrappedMessage{
 		MessageType: messages.TSSControlMsg,
 		Payload:     payload,
+		Proto:       protocol.ConvertToStrings([]protocol.ID{protocol.TestingID})[0],
 	}
 
 	err = tssCommonStruct.ProcessOneMessage(&wrappedMsg, "16Uiu2HAmACG5DtqmQsHtXg4G2sLS65ttv84e7MrL4kapkjfmhxAp")
@@ -301,6 +306,7 @@ func (t *TssTestSuite) testProcessTaskDone(c *C, tssCommonStruct *TssCommon) {
 	wrappedMsg := messages.WrappedMessage{
 		MessageType: messages.TSSTaskDone,
 		Payload:     marshaledMsg,
+		Proto:       protocol.ConvertToStrings([]protocol.ID{protocol.TestingID})[0],
 	}
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -390,7 +396,7 @@ func (t *TssTestSuite) TestTssCommon(c *C) {
 	c.Assert(err, IsNil)
 	broadcastChannel := make(chan *messages.BroadcastMsgChan)
 	sk := secp256k1.GenPrivKey()
-	tssCommon := NewTssCommon(peerID.String(), broadcastChannel, TssConfig{}, "message-id", sk)
+	tssCommon := NewTssCommon(peerID.String(), broadcastChannel, TssConfig{}, "message-id", sk, protocol.TestingID)
 	c.Assert(tssCommon, NotNil)
 	stopchan := make(chan struct{})
 	wg := sync.WaitGroup{}

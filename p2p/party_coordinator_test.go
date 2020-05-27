@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/assert"
@@ -40,7 +41,7 @@ func setupHosts(t *testing.T, n int) []host.Host {
 	return hosts
 }
 
-func TestNewPartyCoordinator(t *testing.T) {
+func TestJoinParty(t *testing.T) {
 	ApplyDeadline = false
 	hosts := setupHosts(t, 4)
 	var pcs []PartyCoordinator
@@ -59,31 +60,39 @@ func TestNewPartyCoordinator(t *testing.T) {
 	}()
 
 	msgID := conversion.RandStringBytesMask(64)
-	joinPartyReq := messages.JoinPartyRequest{
-		ID: msgID,
-	}
+
 	wg := sync.WaitGroup{}
+	testProtocolGroup1 := []string{"/p2p/tss/gg18", "/p2p/tss/gg20"}
+	testProtocolGroup2 := []string{"/p2p/tss/gg20"}
 
-	for _, el := range pcs {
+	for idx, el := range pcs {
 		wg.Add(1)
-
 		go func(coordinator PartyCoordinator) {
 			defer wg.Done()
 			// we simulate different nodes join at different time
 			time.Sleep(time.Second * time.Duration(rand.Int()%10))
-			onlinePeers, err := coordinator.JoinPartyWithRetry(&joinPartyReq, peers)
+			testProtos := testProtocolGroup1
+			if idx > 2 {
+				testProtos = testProtocolGroup2
+			}
+			joinPartyReq := messages.JoinPartyRequest{
+				ID:        msgID,
+				Protocols: testProtos,
+			}
+			onlinePeers, proto, err := coordinator.JoinPartyWithRetry(&joinPartyReq, peers)
 			if err != nil {
 				t.Error(err)
 			}
 			assert.Nil(t, err)
 			assert.Len(t, onlinePeers, 4)
+			assert.Equal(t, proto, protocol.ConvertFromStrings([]string{"/p2p/tss/gg20"})[0])
 		}(el)
 	}
 
 	wg.Wait()
 }
 
-func TestNewPartyCoordinatorTimeOut(t *testing.T) {
+func TestJoinPartyTimeOut(t *testing.T) {
 	ApplyDeadline = false
 	timeout := time.Second
 	hosts := setupHosts(t, 4)
@@ -108,7 +117,8 @@ func TestNewPartyCoordinatorTimeOut(t *testing.T) {
 	msgID := conversion.RandStringBytesMask(64)
 
 	joinPartyReq := messages.JoinPartyRequest{
-		ID: msgID,
+		ID:        msgID,
+		Protocols: []string{"/p2p/tss/gg18"},
 	}
 	wg := sync.WaitGroup{}
 
@@ -116,7 +126,7 @@ func TestNewPartyCoordinatorTimeOut(t *testing.T) {
 		wg.Add(1)
 		go func(coordinator *PartyCoordinator) {
 			defer wg.Done()
-			onlinePeers, err := coordinator.JoinPartyWithRetry(&joinPartyReq, peers)
+			onlinePeers, _, err := coordinator.JoinPartyWithRetry(&joinPartyReq, peers)
 			assert.Errorf(t, err, errJoinPartyTimeout.Error())
 			var onlinePeersStr []string
 			for _, el := range onlinePeers {
@@ -126,6 +136,44 @@ func TestNewPartyCoordinatorTimeOut(t *testing.T) {
 			expected := peers[:2]
 			sort.Strings(expected)
 			assert.EqualValues(t, onlinePeersStr, expected)
+		}(el)
+	}
+
+	wg.Wait()
+}
+
+func TestJoinPartyUnsupportedProtocol(t *testing.T) {
+	ApplyDeadline = false
+	hosts := setupHosts(t, 4)
+	var pcs []PartyCoordinator
+	var peers []string
+
+	timeout := time.Second * 10
+	for _, el := range hosts {
+		pcs = append(pcs, *NewPartyCoordinator(el, timeout))
+		peers = append(peers, el.ID().String())
+	}
+
+	defer func() {
+		for _, el := range pcs {
+			el.Stop()
+		}
+	}()
+
+	msgID := conversion.RandStringBytesMask(64)
+
+	wg := sync.WaitGroup{}
+
+	for _, el := range pcs {
+		wg.Add(1)
+		go func(coordinator PartyCoordinator) {
+			defer wg.Done()
+			joinPartyReq := messages.JoinPartyRequest{
+				ID:        msgID,
+				Protocols: []string{"/tss/invalidProtocol"},
+			}
+			_, _, err := coordinator.JoinPartyWithRetry(&joinPartyReq, peers)
+			assert.Error(t, err, "unknown protocol")
 		}(el)
 	}
 

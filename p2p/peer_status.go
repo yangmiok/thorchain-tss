@@ -5,11 +5,14 @@ import (
 	"sync"
 
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
+
+	"gitlab.com/thorchain/tss/go-tss/conversion"
 )
 
 type PeerStatus struct {
 	peersResponse  map[peer.ID]bool
-	peerProtocol   map[peer.ID]string
+	peerProtocol   map[peer.ID][]string
 	peerStatusLock *sync.RWMutex
 	newFound       chan bool
 }
@@ -24,7 +27,7 @@ func NewPeerStatus(peerNodes []peer.ID, myPeerID peer.ID) *PeerStatus {
 	}
 	peerStatus := &PeerStatus{
 		peersResponse:  dat,
-		peerProtocol:   make(map[peer.ID]string),
+		peerProtocol:   make(map[peer.ID][]string),
 		peerStatusLock: &sync.RWMutex{},
 		newFound:       make(chan bool, len(peerNodes)),
 	}
@@ -52,7 +55,29 @@ func (ps *PeerStatus) getPeersStatus() ([]peer.ID, []peer.ID) {
 	return online, offline
 }
 
-func (ps *PeerStatus) updatePeer(peerNode peer.ID) (bool, error) {
+func (ps *PeerStatus) getProtocol() (protocol.ID, error) {
+	ps.peerStatusLock.Lock()
+	defer ps.peerStatusLock.Unlock()
+	protocols := make(map[string]string)
+	for k, v := range ps.peerProtocol {
+		for idx, el := range v {
+			protocols[k.String()+string(idx)] = el
+		}
+	}
+	ret, _, err := conversion.GetHighestFreq(protocols)
+	if err != nil {
+		return "", err
+	}
+	proto := protocol.ConvertFromStrings([]string{ret})[0]
+	for _, el := range TssProtocols {
+		if proto == el {
+			return proto, nil
+		}
+	}
+	return "", errors.New("unknown protocol")
+}
+
+func (ps *PeerStatus) updatePeer(peerNode peer.ID, protos []string) (bool, error) {
 	ps.peerStatusLock.Lock()
 	defer ps.peerStatusLock.Unlock()
 	val, ok := ps.peersResponse[peerNode]
@@ -61,6 +86,7 @@ func (ps *PeerStatus) updatePeer(peerNode peer.ID) (bool, error) {
 	}
 	if !val {
 		ps.peersResponse[peerNode] = true
+		ps.peerProtocol[peerNode] = protos
 		return true, nil
 	}
 	return false, nil

@@ -5,14 +5,17 @@ package messages
 
 import (
 	fmt "fmt"
+
 	proto "github.com/golang/protobuf/proto"
 	math "math"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
-var _ = proto.Marshal
-var _ = fmt.Errorf
-var _ = math.Inf
+var (
+	_ = proto.Marshal
+	_ = fmt.Errorf
+	_ = math.Inf
+)
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the proto package it is being compiled against.
@@ -67,15 +70,19 @@ func (*KeysignSignature) Descriptor() ([]byte, []int) {
 func (m *KeysignSignature) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_KeysignSignature.Unmarshal(m, b)
 }
+
 func (m *KeysignSignature) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_KeysignSignature.Marshal(b, m, deterministic)
 }
+
 func (m *KeysignSignature) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_KeysignSignature.Merge(m, src)
 }
+
 func (m *KeysignSignature) XXX_Size() int {
 	return xxx_messageInfo_KeysignSignature.Size(m)
 }
+
 func (m *KeysignSignature) XXX_DiscardUnknown() {
 	xxx_messageInfo_KeysignSignature.DiscardUnknown(m)
 }
@@ -108,9 +115,7 @@ func init() {
 	proto.RegisterType((*KeysignSignature)(nil), "messages.KeysignSignature")
 }
 
-func init() {
-	proto.RegisterFile("signature_notifier.proto", fileDescriptor_7604b65b7d1ea1e3)
-}
+func init() { proto.RegisterFile("signature_notifier.proto", fileDescriptor_7604b65b7d1ea1e3) }
 
 var fileDescriptor_7604b65b7d1ea1e3 = []byte{
 	// 182 bytes of a gzipped FileDescriptorProto
