@@ -2,13 +2,17 @@ package conversion
 
 import (
 	"errors"
+	"fmt"
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 
+	semver "github.com/Masterminds/semver"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	atypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 )
 
@@ -71,4 +75,41 @@ func GetHighestFreq(in map[string]string) (string, int, error) {
 		return "", 0, err
 	}
 	return sFreq[0][0], freqInt, nil
+}
+
+func SupportedVersion(protos []string) (map[string]*semver.Version, error) {
+	if len(protos) == 0 {
+		return nil, errors.New("empty input")
+	}
+	vs := make(map[string]*semver.Version)
+	for _, el := range protos {
+		a := strings.Split(el, "/")
+		if len(a) < 1 {
+			return nil, errors.New("fail to ")
+		}
+		major := a[len(a)-1]
+		v, err := semver.NewVersion(major)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing version: %w", err)
+		}
+		vs[el] = v
+	}
+	return vs, nil
+}
+
+func GetProtocol(ver string, supported map[string]*semver.Version) (protocol.ID, error) {
+	a := strings.Split(ver, "gg")
+	if len(a) < 2 {
+		return "", errors.New("unsupported version format")
+	}
+	tv, err := semver.NewVersion(a[1])
+	if err != nil {
+		return "", err
+	}
+	for proto, v := range supported {
+		if tv.Major() == v.Major() {
+			return protocol.ConvertFromStrings([]string{proto})[0], nil
+		}
+	}
+	return "", errors.New("no protocol matched with the given version")
 }

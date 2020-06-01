@@ -11,7 +11,6 @@ import (
 	bkeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/protocol"
 	maddr "github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -156,17 +155,17 @@ func (t *TssServer) requestToMsgId(request interface{}) (string, error) {
 	return common.MsgToHashString(dat)
 }
 
-func (t *TssServer) joinParty(msgID string, keys []string, protos []string) ([]peer.ID, protocol.ID, error) {
+func (t *TssServer) joinParty(msgID string, keys []string, versions []string) ([]peer.ID, string, error) {
 	peerIDs, err := conversion.GetPeerIDsFromPubKeys(keys)
 	if err != nil {
 		return nil, "", fmt.Errorf("fail to convert pub key to peer id: %w", err)
 	}
 	joinPartyReq := &messages.JoinPartyRequest{
-		ID:        msgID,
-		Protocols: protos,
+		ID:       msgID,
+		Versions: versions,
 	}
-	onlinePeers, proto, err := t.partyCoordinator.JoinPartyWithRetry(joinPartyReq, peerIDs)
-	return onlinePeers, proto, err
+	onlinePeers, version, err := t.partyCoordinator.JoinPartyWithRetry(joinPartyReq, peerIDs)
+	return onlinePeers, version, err
 }
 
 // GetLocalPeerID return the local peer

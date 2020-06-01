@@ -28,8 +28,8 @@ var joinPartyProtocol protocol.ID = "/p2p/join-party"
 
 // TSSProtocolID protocol id used for tss
 const (
-	TSSProtocolGG18 protocol.ID = "/p2p/tss/gg18"
-	TSSProtocolGG20 protocol.ID = "/p2p/tss/gg20"
+	TSSProtocolGG18 protocol.ID = "/p2p/tss/18"
+	TSSProtocolGG20 protocol.ID = "/p2p/tss/20"
 )
 
 var TssProtocols = []protocol.ID{TSSProtocolGG18, TSSProtocolGG20}

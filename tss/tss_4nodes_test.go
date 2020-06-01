@@ -18,6 +18,7 @@ import (
 	maddr "github.com/multiformats/go-multiaddr"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/tss/go-tss/blame"
 	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/keygen"
@@ -28,7 +29,7 @@ const (
 	partyNum         = 4
 	testFileLocation = "../test_data"
 	preParamTestFile = "preParam_test.data"
-	testProtocol     = "/p2p/tss/gg18"
+	testVersion      = "gg18.1.0"
 )
 
 var (
@@ -99,29 +100,31 @@ func hash(payload []byte) []byte {
 
 // generate a new key
 func (s *FourNodeTestSuite) TestKeygenWithUnsupportedProtocol(c *C) {
-	req := keygen.NewRequest(testPubKeys, []string{testProtocol})
-	req2 := keygen.NewRequest(testPubKeys, []string{"/p2p/tss/gg30"})
+	req := keygen.NewRequest(testPubKeys, []string{"gg30.0"})
 	wg := sync.WaitGroup{}
+	lock := &sync.Mutex{}
+	keygenResult := make(map[int]keygen.Response)
 	for i := 0; i < partyNum; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
 			var err error
-			if idx == 1 {
-				_, err = s.servers[idx].Keygen(req2)
-				c.Assert(err, IsNil)
-			} else {
-				_, err = s.servers[idx].Keygen(req)
-				c.Assert(err, NotNil)
-			}
+			resp, err := s.servers[idx].Keygen(req)
+			c.Assert(err, IsNil)
+			lock.Lock()
+			defer lock.Unlock()
+			keygenResult[idx] = resp
 		}(i)
 	}
 	wg.Wait()
+	for _, el := range keygenResult {
+		c.Assert(el.Blame.FailReason, Equals, blame.UnsupportedProtocol)
+	}
 }
 
 // generate a new key
 func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
-	req := keygen.NewRequest(testPubKeys, []string{testProtocol})
+	req := keygen.NewRequest(testPubKeys, []string{testVersion})
 	wg := sync.WaitGroup{}
 	lock := &sync.Mutex{}
 	keygenResult := make(map[int]keygen.Response)
@@ -145,19 +148,19 @@ func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
 			c.Assert(poolPubKey, Equals, item.PubKey)
 		}
 	}
-	keysignReqWithErr := keysign.NewRequest(poolPubKey, "helloworld", testPubKeys, []string{testProtocol})
+	keysignReqWithErr := keysign.NewRequest(poolPubKey, "helloworld", testPubKeys, []string{testVersion})
 	resp, err := s.servers[0].KeySign(keysignReqWithErr)
 	c.Assert(err, NotNil)
 	c.Assert(resp.S, Equals, "")
-	keysignReqWithErr1 := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), testPubKeys[:1], []string{testProtocol})
+	keysignReqWithErr1 := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), testPubKeys[:1], []string{testVersion})
 	resp, err = s.servers[0].KeySign(keysignReqWithErr1)
 	c.Assert(err, NotNil)
 	c.Assert(resp.S, Equals, "")
-	keysignReqWithErr2 := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), nil, []string{testProtocol})
+	keysignReqWithErr2 := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), nil, []string{testVersion})
 	resp, err = s.servers[0].KeySign(keysignReqWithErr2)
 	c.Assert(err, NotNil)
 	c.Assert(resp.S, Equals, "")
-	keysignReq := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), testPubKeys, []string{testProtocol})
+	keysignReq := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), testPubKeys, []string{testVersion})
 	keysignResult := make(map[int]keysign.Response)
 	for i := 0; i < partyNum; i++ {
 		wg.Add(1)
@@ -180,7 +183,7 @@ func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
 		c.Assert(signature, Equals, item.S+item.R)
 	}
 	payload := base64.StdEncoding.EncodeToString(hash([]byte("helloworld+xyz")))
-	keysignReq = keysign.NewRequest(poolPubKey, payload, testPubKeys[:3], []string{testProtocol})
+	keysignReq = keysign.NewRequest(poolPubKey, payload, testPubKeys[:3], []string{testVersion})
 	keysignResult1 := make(map[int]keysign.Response)
 	for i := 0; i < partyNum; i++ {
 		wg.Add(1)
@@ -202,12 +205,11 @@ func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
 		}
 		c.Assert(signature, Equals, item.S+item.R)
 	}
-	// make sure we sign
 }
 
 func (s *FourNodeTestSuite) TestFailJoinParty(c *C) {
 	// JoinParty should fail if there is a node that suppose to be in the keygen , but we didn't send request in
-	req := keygen.NewRequest(testPubKeys, []string{testProtocol})
+	req := keygen.NewRequest(testPubKeys, []string{testVersion})
 	wg := sync.WaitGroup{}
 	lock := &sync.Mutex{}
 	keygenResult := make(map[int]keygen.Response)
@@ -241,7 +243,7 @@ func (s *FourNodeTestSuite) TestFailJoinParty(c *C) {
 func (s *FourNodeTestSuite) TestBlame(c *C) {
 	s.isBlameTest = true
 	expectedFailNode := testPubKeys[0]
-	req := keygen.NewRequest(testPubKeys, []string{testProtocol})
+	req := keygen.NewRequest(testPubKeys, []string{testVersion})
 	wg := sync.WaitGroup{}
 	lock := &sync.Mutex{}
 	keygenResult := make(map[int]keygen.Response)

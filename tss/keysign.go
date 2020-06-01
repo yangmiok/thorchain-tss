@@ -8,12 +8,14 @@ import (
 	"sync/atomic"
 
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 
 	"gitlab.com/thorchain/tss/go-tss/blame"
 	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/keysign"
 	"gitlab.com/thorchain/tss/go-tss/messages"
+	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
 
 func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
@@ -93,7 +95,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		return emptyResp, fmt.Errorf("fail to convert pub keys to peer id:%w", err)
 	}
 
-	onlinePeers, proto, err := t.joinParty(msgID, req.SignerPubKeys, req.Protos)
+	onlinePeers, ver, err := t.joinParty(msgID, req.SignerPubKeys, req.Protos)
 	if err != nil {
 		if onlinePeers == nil {
 			t.logger.Error().Err(err).Msg("error before we start join party")
@@ -116,6 +118,16 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 			Blame:  blameNodes,
 		}, nil
 
+	}
+
+	supportedVersion, _ := conversion.SupportedVersion(protocol.ConvertToStrings(p2p.TssProtocols))
+	proto, err := conversion.GetProtocol(ver, supportedVersion)
+	if err != nil {
+		t.logger.Error().Msgf("the version(%s) is not supported by this request", ver)
+		return keysign.Response{
+			Status: common.Fail,
+			Blame:  blame.NewBlame(blame.UnsupportedProtocol, []blame.Node{}),
+		}, nil
 	}
 
 	t.logger.Info().Msg("keysign party formed")

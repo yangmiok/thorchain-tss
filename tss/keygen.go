@@ -7,8 +7,10 @@ import (
 
 	"gitlab.com/thorchain/tss/go-tss/blame"
 	"gitlab.com/thorchain/tss/go-tss/common"
+	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/keygen"
 	"gitlab.com/thorchain/tss/go-tss/messages"
+	"gitlab.com/thorchain/tss/go-tss/p2p"
 )
 
 func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
@@ -41,7 +43,7 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, msgID)
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSTaskDone, msgID)
 
-	onlinePeers, proto, err := t.joinParty(msgID, req.Keys, req.Protos)
+	onlinePeers, ver, err := t.joinParty(msgID, req.Keys, req.Protos)
 	if err != nil {
 		if onlinePeers == nil {
 			t.logger.Error().Err(err).Msg("error before we start join party")
@@ -62,15 +64,11 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 			Blame:  blameNodes,
 		}, nil
 	}
-	found := false
-	for _, el := range req.Protos {
-		if el == protocol.ConvertToStrings([]protocol.ID{proto})[0] {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.logger.Error().Msgf("the protocol(%s) is not supported by this request", protocol.ConvertToStrings([]protocol.ID{proto}))
+
+	supportedVersion, _ := conversion.SupportedVersion(protocol.ConvertToStrings(p2p.TssProtocols))
+	proto, err := conversion.GetProtocol(ver, supportedVersion)
+	if err != nil {
+		t.logger.Error().Msgf("the version(%s) is not supported by this request", ver)
 		return keygen.Response{
 			Status: common.Fail,
 			Blame:  blame.NewBlame(blame.UnsupportedProtocol, []blame.Node{}),
