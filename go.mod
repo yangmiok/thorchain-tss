@@ -3,7 +3,6 @@ module gitlab.com/thorchain/tss/go-tss
 go 1.13
 
 require (
-	github.com/Masterminds/semver v1.5.0
 	github.com/binance-chain/go-sdk v1.2.1
 	github.com/binance-chain/tss-lib v1.3.1
 	github.com/btcsuite/btcd v0.20.1-beta

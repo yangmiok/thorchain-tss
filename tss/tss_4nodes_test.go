@@ -18,7 +18,6 @@ import (
 	maddr "github.com/multiformats/go-multiaddr"
 	. "gopkg.in/check.v1"
 
-	"gitlab.com/thorchain/tss/go-tss/blame"
 	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/conversion"
 	"gitlab.com/thorchain/tss/go-tss/keygen"
@@ -29,7 +28,6 @@ const (
 	partyNum         = 4
 	testFileLocation = "../test_data"
 	preParamTestFile = "preParam_test.data"
-	testVersion      = "gg18.1.0"
 )
 
 var (
@@ -99,32 +97,8 @@ func hash(payload []byte) []byte {
 }
 
 // generate a new key
-func (s *FourNodeTestSuite) TestKeygenWithUnsupportedProtocol(c *C) {
-	req := keygen.NewRequest(testPubKeys, []string{"gg30.0"})
-	wg := sync.WaitGroup{}
-	lock := &sync.Mutex{}
-	keygenResult := make(map[int]keygen.Response)
-	for i := 0; i < partyNum; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			var err error
-			resp, err := s.servers[idx].Keygen(req)
-			c.Assert(err, IsNil)
-			lock.Lock()
-			defer lock.Unlock()
-			keygenResult[idx] = resp
-		}(i)
-	}
-	wg.Wait()
-	for _, el := range keygenResult {
-		c.Assert(el.Blame.FailReason, Equals, blame.UnsupportedProtocol)
-	}
-}
-
-// generate a new key
 func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
-	req := keygen.NewRequest(testPubKeys, []string{testVersion})
+	req := keygen.NewRequest(testPubKeys)
 	wg := sync.WaitGroup{}
 	lock := &sync.Mutex{}
 	keygenResult := make(map[int]keygen.Response)
@@ -148,19 +122,19 @@ func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
 			c.Assert(poolPubKey, Equals, item.PubKey)
 		}
 	}
-	keysignReqWithErr := keysign.NewRequest(poolPubKey, "helloworld", testPubKeys, []string{testVersion})
+	keysignReqWithErr := keysign.NewRequest(poolPubKey, "helloworld", testPubKeys)
 	resp, err := s.servers[0].KeySign(keysignReqWithErr)
 	c.Assert(err, NotNil)
 	c.Assert(resp.S, Equals, "")
-	keysignReqWithErr1 := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), testPubKeys[:1], []string{testVersion})
+	keysignReqWithErr1 := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), testPubKeys[:1])
 	resp, err = s.servers[0].KeySign(keysignReqWithErr1)
 	c.Assert(err, NotNil)
 	c.Assert(resp.S, Equals, "")
-	keysignReqWithErr2 := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), nil, []string{testVersion})
+	keysignReqWithErr2 := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), nil)
 	resp, err = s.servers[0].KeySign(keysignReqWithErr2)
 	c.Assert(err, NotNil)
 	c.Assert(resp.S, Equals, "")
-	keysignReq := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), testPubKeys, []string{testVersion})
+	keysignReq := keysign.NewRequest(poolPubKey, base64.StdEncoding.EncodeToString(hash([]byte("helloworld"))), testPubKeys)
 	keysignResult := make(map[int]keysign.Response)
 	for i := 0; i < partyNum; i++ {
 		wg.Add(1)
@@ -183,7 +157,7 @@ func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
 		c.Assert(signature, Equals, item.S+item.R)
 	}
 	payload := base64.StdEncoding.EncodeToString(hash([]byte("helloworld+xyz")))
-	keysignReq = keysign.NewRequest(poolPubKey, payload, testPubKeys[:3], []string{testVersion})
+	keysignReq = keysign.NewRequest(poolPubKey, payload, testPubKeys[:3])
 	keysignResult1 := make(map[int]keysign.Response)
 	for i := 0; i < partyNum; i++ {
 		wg.Add(1)
@@ -209,7 +183,7 @@ func (s *FourNodeTestSuite) TestKeygenAndKeySign(c *C) {
 
 func (s *FourNodeTestSuite) TestFailJoinParty(c *C) {
 	// JoinParty should fail if there is a node that suppose to be in the keygen , but we didn't send request in
-	req := keygen.NewRequest(testPubKeys, []string{testVersion})
+	req := keygen.NewRequest(testPubKeys)
 	wg := sync.WaitGroup{}
 	lock := &sync.Mutex{}
 	keygenResult := make(map[int]keygen.Response)
@@ -243,7 +217,7 @@ func (s *FourNodeTestSuite) TestFailJoinParty(c *C) {
 func (s *FourNodeTestSuite) TestBlame(c *C) {
 	s.isBlameTest = true
 	expectedFailNode := testPubKeys[0]
-	req := keygen.NewRequest(testPubKeys, []string{testVersion})
+	req := keygen.NewRequest(testPubKeys)
 	wg := sync.WaitGroup{}
 	lock := &sync.Mutex{}
 	keygenResult := make(map[int]keygen.Response)

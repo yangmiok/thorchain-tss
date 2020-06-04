@@ -14,7 +14,6 @@ import (
 	"time"
 
 	btss "github.com/binance-chain/tss-lib/tss"
-	"github.com/libp2p/go-libp2p-core/protocol"
 
 	"github.com/rs/zerolog/log"
 
@@ -159,7 +158,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessage(c *C) {
 		return
 	}
 	sort.Strings(testPubKeys)
-	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys, []string{"/p2p/tss/gg18"})
+	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys)
 	messageID, err := common.MsgToHashString([]byte(req.Message))
 	c.Assert(err, IsNil)
 	wg := sync.WaitGroup{}
@@ -243,7 +242,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessageWithStop(c *C) {
 		return
 	}
 	sort.Strings(testPubKeys)
-	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys, []string{"/p2p/tss/gg18"})
+	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys)
 	messageID, err := common.MsgToHashString([]byte(req.Message))
 	c.Assert(err, IsNil)
 	wg := sync.WaitGroup{}
@@ -326,7 +325,7 @@ func (s *TssKeysisgnTestSuite) TestSignMessageRejectOnePeer(c *C) {
 		return
 	}
 	sort.Strings(testPubKeys)
-	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys, []string{"/p2p/tss/gg18"})
+	req := NewRequest("thorpub1addwnpepqv6xp3fmm47dfuzglywqvpv8fdjv55zxte4a26tslcezns5czv586u2fw33", "helloworld-test111", testPubKeys)
 	messageID, err := common.MsgToHashString([]byte(req.Message))
 	c.Assert(err, IsNil)
 	wg := sync.WaitGroup{}
@@ -393,7 +392,7 @@ func (s *TssKeysisgnTestSuite) TestCloseKeySignnotifyChannel(c *C) {
 		MessageType: messages.TSSTaskDone,
 		MsgID:       "test",
 		Payload:     taskDoneBytes,
-		Proto:       protocol.ConvertToStrings([]protocol.ID{p2p.TSSProtocolGG18})[0],
+		Proto:       string(p2p.TSSProtocolGG18),
 	}
 	partyIdMap := make(map[string]*btss.PartyID)
 	partyIdMap["1"] = nil

@@ -149,7 +149,7 @@ func fabricateTssMsg(c *C, privKey tcrypto.PrivKey, partyID *btss.PartyID, round
 	wrappedMsg := messages.WrappedMessage{
 		MessageType: msgType,
 		Payload:     marshaledMsg,
-		Proto:       protocol.ConvertToStrings([]protocol.ID{protocol.TestingID})[0],
+		Proto:       string(protocol.TestingID),
 	}
 	return &wrappedMsg
 }
@@ -165,7 +165,7 @@ func fabricateVerMsg(c *C, hash, hashKey string) *messages.WrappedMessage {
 	wrappedMsg := messages.WrappedMessage{
 		MessageType: messages.TSSKeyGenVerMsg,
 		Payload:     marshaledMsg,
-		Proto:       protocol.ConvertToStrings([]protocol.ID{protocol.TestingID})[0],
+		Proto:       string(protocol.TestingID),
 	}
 	return &wrappedMsg
 }
@@ -266,7 +266,7 @@ func (t *TssTestSuite) testProcessControlMsg(c *C, tssCommonStruct *TssCommon, s
 	wrappedMsg := messages.WrappedMessage{
 		MessageType: messages.TSSControlMsg,
 		Payload:     payload,
-		Proto:       protocol.ConvertToStrings([]protocol.ID{protocol.TestingID})[0],
+		Proto:       string(protocol.TestingID),
 	}
 
 	err = tssCommonStruct.ProcessOneMessage(&wrappedMsg, "1")
@@ -292,7 +292,7 @@ func (t *TssTestSuite) testProcessControlMsg(c *C, tssCommonStruct *TssCommon, s
 	wrappedMsg = messages.WrappedMessage{
 		MessageType: messages.TSSControlMsg,
 		Payload:     payload,
-		Proto:       protocol.ConvertToStrings([]protocol.ID{protocol.TestingID})[0],
+		Proto:       string(protocol.TestingID),
 	}
 
 	err = tssCommonStruct.ProcessOneMessage(&wrappedMsg, "16Uiu2HAmACG5DtqmQsHtXg4G2sLS65ttv84e7MrL4kapkjfmhxAp")
@@ -306,7 +306,7 @@ func (t *TssTestSuite) testProcessTaskDone(c *C, tssCommonStruct *TssCommon) {
 	wrappedMsg := messages.WrappedMessage{
 		MessageType: messages.TSSTaskDone,
 		Payload:     marshaledMsg,
-		Proto:       protocol.ConvertToStrings([]protocol.ID{protocol.TestingID})[0],
+		Proto:       string(protocol.TestingID),
 	}
 	wg := sync.WaitGroup{}
 	wg.Add(1)

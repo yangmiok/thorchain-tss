@@ -191,8 +191,8 @@ func (t *TssCommon) ProcessOneMessage(wrappedMsg *messages.WrappedMessage, peerI
 	if nil == wrappedMsg {
 		return errors.New("invalid wireMessage")
 	}
-	if wrappedMsg.Proto != protocol.ConvertToStrings([]protocol.ID{t.agreedProto})[0] {
-		return errors.New("tss protocol is not supported")
+	if wrappedMsg.Proto != string(t.agreedProto) {
+		return fmt.Errorf("tss protocol(%s) is not supported", wrappedMsg.Proto)
 	}
 
 	switch wrappedMsg.MessageType {
@@ -330,7 +330,7 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		MessageType: msgType,
 		MsgID:       t.msgID,
 		Payload:     wireMsgBytes,
-		Proto:       protocol.ConvertToStrings([]protocol.ID{t.agreedProto})[0],
+		Proto:       string(t.agreedProto),
 	}
 	peerIDs := make([]peer.ID, 0)
 	if len(r.To) == 0 {
@@ -480,7 +480,7 @@ func (t *TssCommon) broadcastHashToPeers(key, msgHash string, peerIDs []peer.ID,
 		MessageType: msgType,
 		MsgID:       t.msgID,
 		Payload:     buf,
-		Proto:       protocol.ConvertToStrings([]protocol.ID{t.agreedProto})[0],
+		Proto:       string(t.agreedProto),
 	}
 	t.renderToP2P(&messages.BroadcastMsgChan{
 		WrappedMessage: p2pWrappedMSg,

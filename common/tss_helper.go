@@ -16,7 +16,6 @@ import (
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
@@ -112,7 +111,7 @@ func (t *TssCommon) NotifyTaskDone() error {
 		MessageType: messages.TSSTaskDone,
 		MsgID:       t.msgID,
 		Payload:     data,
-		Proto:       protocol.ConvertToStrings([]protocol.ID{t.agreedProto})[0],
+		Proto:       string(t.agreedProto),
 	}
 
 	t.renderToP2P(&messages.BroadcastMsgChan{
@@ -145,7 +144,7 @@ func (t *TssCommon) processRequestMsgFromPeer(peersID []peer.ID, msg *messages.T
 		MessageType: messages.TSSControlMsg,
 		MsgID:       t.msgID,
 		Payload:     data,
-		Proto:       protocol.ConvertToStrings([]protocol.ID{t.agreedProto})[0],
+		Proto:       string(t.agreedProto),
 	}
 
 	t.renderToP2P(&messages.BroadcastMsgChan{

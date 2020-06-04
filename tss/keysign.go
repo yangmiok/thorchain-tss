@@ -95,7 +95,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		return emptyResp, fmt.Errorf("fail to convert pub keys to peer id:%w", err)
 	}
 
-	onlinePeers, ver, err := t.joinParty(msgID, req.SignerPubKeys, req.Protos)
+	onlinePeers, ver, err := t.joinParty(msgID, req.SignerPubKeys, p2p.TssSupportedVersions)
 	if err != nil {
 		if onlinePeers == nil {
 			t.logger.Error().Err(err).Msg("error before we start join party")
@@ -120,8 +120,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 
 	}
 
-	supportedVersion, _ := conversion.SupportedVersion(protocol.ConvertToStrings(p2p.TssProtocols))
-	proto, err := conversion.GetProtocol(ver, supportedVersion)
+	proto, err := conversion.GetP2PProtocol(ver, protocol.ConvertToStrings(p2p.TssProtocols))
 	if err != nil {
 		t.logger.Error().Msgf("the version(%s) is not supported by this request", ver)
 		return keysign.Response{

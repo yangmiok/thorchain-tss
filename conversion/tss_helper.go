@@ -2,13 +2,10 @@ package conversion
 
 import (
 	"errors"
-	"fmt"
 	"math/rand"
 	"sort"
-	"strconv"
 	"strings"
 
-	semver "github.com/Masterminds/semver"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	atypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -52,64 +49,50 @@ func GetHighestFreq(in map[string]string) (string, int, error) {
 		return "", 0, errors.New("empty input")
 	}
 	freq := make(map[string]int, len(in))
-	hashPeerMap := make(map[string]string, len(in))
-	for peer, n := range in {
+	for _, n := range in {
 		freq[n]++
-		hashPeerMap[n] = peer
 	}
-
-	sFreq := make([][2]string, 0, len(freq))
-	for n, f := range freq {
-		sFreq = append(sFreq, [2]string{n, strconv.FormatInt(int64(f), 10)})
-	}
-	sort.Slice(sFreq, func(i, j int) bool {
-		if sFreq[i][1] > sFreq[j][1] {
-			return true
+	max := 0
+	var values []string
+	for v, f := range freq {
+		if f > max {
+			max = f
+			values = make([]string, 1)
+			values[0] = v
 		} else {
-			return false
+			if f == max {
+				values = append(values, v)
+			}
 		}
-	},
-	)
-	freqInt, err := strconv.Atoi(sFreq[0][1])
-	if err != nil {
-		return "", 0, err
 	}
-	return sFreq[0][0], freqInt, nil
+	sort.Slice(values, func(i, j int) bool {
+		return values[i] > values[j]
+	})
+
+	return values[0], max, nil
 }
 
-func SupportedVersion(protos []string) (map[string]*semver.Version, error) {
+func GetP2PProtocol(ver string, protos []string) (protocol.ID, error) {
 	if len(protos) == 0 {
-		return nil, errors.New("empty input")
+		return "", errors.New("empty protocols array")
 	}
-	vs := make(map[string]*semver.Version)
+
+	a := strings.Split(ver, "-")
+	if len(a) == 0 {
+		return "", errors.New("invalid input version")
+	}
+	verHead := strings.TrimPrefix(a[0], "gg")
+
 	for _, el := range protos {
 		a := strings.Split(el, "/")
 		if len(a) < 1 {
-			return nil, errors.New("fail to ")
+			return "", errors.New("fail to get the supported version")
 		}
-		major := a[len(a)-1]
-		v, err := semver.NewVersion(major)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing version: %w", err)
+		proto := a[len(a)-1]
+		if verHead == proto {
+			return protocol.ID(el), nil
 		}
-		vs[el] = v
 	}
-	return vs, nil
-}
 
-func GetProtocol(ver string, supported map[string]*semver.Version) (protocol.ID, error) {
-	a := strings.Split(ver, "gg")
-	if len(a) < 2 {
-		return "", errors.New("unsupported version format")
-	}
-	tv, err := semver.NewVersion(a[1])
-	if err != nil {
-		return "", err
-	}
-	for proto, v := range supported {
-		if tv.Major() == v.Major() {
-			return protocol.ConvertFromStrings([]string{proto})[0], nil
-		}
-	}
-	return "", errors.New("no protocol matched with the given version")
+	return "", errors.New("p2p protocol not found")
 }

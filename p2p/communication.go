@@ -32,7 +32,10 @@ const (
 	TSSProtocolGG20 protocol.ID = "/p2p/tss/20"
 )
 
-var TssProtocols = []protocol.ID{TSSProtocolGG18, TSSProtocolGG20}
+var (
+	TssProtocols         = []protocol.ID{TSSProtocolGG18, TSSProtocolGG20}
+	TssSupportedVersions = []string{"gg18-1.3.2", "gg20-"}
+)
 
 const (
 	// TimeoutConnecting maximum time for wait for peers to connect
@@ -385,7 +388,7 @@ func (c *Communication) ProcessBroadcast() {
 				continue
 			}
 			c.logger.Debug().Msgf("broadcast message %s to %+v", msg.WrappedMessage, msg.PeersID)
-			c.Broadcast(msg.PeersID, wrappedMsgBytes, protocol.ConvertFromStrings([]string{proto})[0])
+			c.Broadcast(msg.PeersID, wrappedMsgBytes, protocol.ID(proto))
 
 		case <-c.stopChan:
 			return

@@ -43,7 +43,7 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, msgID)
 	defer t.p2pCommunication.CancelSubscribe(messages.TSSTaskDone, msgID)
 
-	onlinePeers, ver, err := t.joinParty(msgID, req.Keys, req.Protos)
+	onlinePeers, ver, err := t.joinParty(msgID, req.Keys, p2p.TssSupportedVersions)
 	if err != nil {
 		if onlinePeers == nil {
 			t.logger.Error().Err(err).Msg("error before we start join party")
@@ -64,11 +64,9 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 			Blame:  blameNodes,
 		}, nil
 	}
-
-	supportedVersion, _ := conversion.SupportedVersion(protocol.ConvertToStrings(p2p.TssProtocols))
-	proto, err := conversion.GetProtocol(ver, supportedVersion)
+	proto, err := conversion.GetP2PProtocol(ver, protocol.ConvertToStrings(p2p.TssProtocols))
 	if err != nil {
-		t.logger.Error().Msgf("the version(%s) is not supported by this request", ver)
+		t.logger.Error().Err(err).Msgf("the version(%s) is not supported by this request", ver)
 		return keygen.Response{
 			Status: common.Fail,
 			Blame:  blame.NewBlame(blame.UnsupportedProtocol, []blame.Node{}),

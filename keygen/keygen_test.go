@@ -157,7 +157,7 @@ func getPreparams(c *C) []*btsskeygen.LocalPreParams {
 
 func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 	sort.Strings(testPubKeys)
-	req := NewRequest(testPubKeys, []string{"/p2p/tss/gg18"})
+	req := NewRequest(testPubKeys)
 	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
 	c.Assert(err, IsNil)
 	conf := common.TssConfig{
@@ -210,7 +210,7 @@ func (s *TssKeygenTestSuite) TestGenerateNewKey(c *C) {
 
 func (s *TssKeygenTestSuite) TestGenerateNewKeyWithUnsupportedProtocol(c *C) {
 	sort.Strings(testPubKeys)
-	req := NewRequest(testPubKeys, []string{"/p2p/tss/gg18"})
+	req := NewRequest(testPubKeys)
 	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
 	c.Assert(err, IsNil)
 	conf := common.TssConfig{
@@ -260,7 +260,7 @@ func (s *TssKeygenTestSuite) TestGenerateNewKeyWithUnsupportedProtocol(c *C) {
 
 func (s *TssKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 	sort.Strings(testPubKeys)
-	req := NewRequest(testPubKeys, []string{"/p2p/tss/gg18"})
+	req := NewRequest(testPubKeys)
 	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
 	c.Assert(err, IsNil)
 	conf := common.TssConfig{
@@ -328,7 +328,7 @@ func (s *TssKeygenTestSuite) TestKeyGenWithError(c *C) {
 	c.Assert(generatedKey, IsNil)
 }
 
-func (s *TssKeygenTestSuite) TestCloseKeyGennotifyChannel(c *C) {
+func (s *TssKeygenTestSuite) TestCloseKeyGenNotifyChannel(c *C) {
 	conf := common.TssConfig{}
 	stateManager := &storage.MockLocalStateManager{}
 	keyGenInstance := NewTssKeyGen("", conf, "", nil, nil, nil, "test", stateManager, s.nodePrivKeys[0], p2p.TSSProtocolGG18)
@@ -340,7 +340,7 @@ func (s *TssKeygenTestSuite) TestCloseKeyGennotifyChannel(c *C) {
 		MessageType: messages.TSSTaskDone,
 		MsgID:       "test",
 		Payload:     taskDoneBytes,
-		Proto:       protocol.ConvertToStrings([]protocol.ID{p2p.TSSProtocolGG18})[0],
+		Proto:       string(p2p.TSSProtocolGG18),
 	}
 	partyIdMap := make(map[string]*btss.PartyID)
 	partyIdMap["1"] = nil
