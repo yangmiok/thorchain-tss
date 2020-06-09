@@ -16,6 +16,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/protocol"
 	discovery "github.com/libp2p/go-libp2p-discovery"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	swarm "github.com/libp2p/go-libp2p-swarm"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	maddr "github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog"
@@ -53,6 +54,7 @@ type Communication struct {
 	subscriberLocker *sync.Mutex
 	streamCount      int64
 	BroadcastMsgChan chan *messages.BroadcastMsgChan
+	dhtInstance      *dht.IpfsDHT
 }
 
 // NewCommunication create a new instance of Communication
@@ -234,6 +236,7 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	if err != nil {
 		return fmt.Errorf("fail to create DHT: %w", err)
 	}
+	c.dhtInstance = kademliaDHT
 	c.logger.Debug().Msg("Bootstrapping the DHT")
 	if err = kademliaDHT.Bootstrap(ctx); err != nil {
 		return fmt.Errorf("fail to bootstrap DHT: %w", err)
@@ -246,7 +249,6 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 
 	routingDiscovery := discovery.NewRoutingDiscovery(kademliaDHT)
 	discovery.Advertise(ctx, routingDiscovery, c.rendezvous)
-
 	err = c.bootStrapConnectivityCheck()
 	if err != nil {
 		return err
@@ -255,7 +257,29 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	c.logger.Info().Msg("Successfully announced!")
 	return nil
 }
-
+func (c *Communication) discoverPeers() error {
+	routingDiscovery := discovery.NewRoutingDiscovery(c.dhtInstance)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	ar, err := routingDiscovery.FindPeers(ctx, c.rendezvous)
+	if err != nil {
+		return fmt.Errorf("fail to find peers: %w", err)
+	}
+	go func() {
+		for {
+			ai, more := <-ar
+			if !more {
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+			defer cancel()
+			if err := c.host.Connect(ctx, ai); err != nil {
+				c.logger.Err(err).Msgf("fail to connect to peer(%s): %w", ai.ID, err)
+			}
+		}
+	}()
+	return nil
+}
 func (c *Communication) connectToOnePeer(pID peer.ID) (network.Stream, error) {
 	c.logger.Debug().Msgf("peer:%s,current:%s", pID, c.host.ID())
 	// dont connect to itself
@@ -267,6 +291,12 @@ func (c *Communication) connectToOnePeer(pID peer.ID) (network.Stream, error) {
 	defer cancel()
 	stream, err := c.host.NewStream(ctx, pID, TSSProtocolID)
 	if err != nil {
+		if errors.Is(err, swarm.ErrNoAddresses) || errors.Is(err, swarm.ErrNoGoodAddresses) {
+			// when can't find the peer address , try to do a discover among neighbour
+			if err := c.discoverPeers(); err != nil {
+				c.logger.Err(err).Msg("fail to discover peers")
+			}
+		}
 		return nil, fmt.Errorf("fail to create new stream to peer: %s, %w", pID, err)
 	}
 	return stream, nil
