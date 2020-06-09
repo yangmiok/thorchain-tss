@@ -10,20 +10,6 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-const (
-	ThorchainDefaultBIP39PassPhrase = "thorchain"
-	BIP44Prefix                     = "44'/714'/"
-	PartialPath                     = "0'/0/0"
-	FullPath                        = BIP44Prefix + PartialPath
-)
-
-type AccAddress []byte
-
-type KeyManager interface {
-	ExportAsMnemonic() (string, error)
-	ExportAsPrivateKey() (string, error)
-}
-
 type cipherParams struct {
 	IV string `json:"iv"`
 }
@@ -67,8 +53,14 @@ func exportKeyStore(privKey []byte, password string) (*EncryptedKey, error) {
 	}
 
 	hasher := sha3.NewLegacyKeccak512()
-	hasher.Write(derivedKey[16:32])
-	hasher.Write(cipherText)
+	_, err = hasher.Write(derivedKey[16:32])
+	if err != nil {
+		return nil, err
+	}
+	_, err = hasher.Write(cipherText)
+	if err != nil {
+		return nil, err
+	}
 	mac := hasher.Sum(nil)
 
 	id, err := uuid.NewV4()

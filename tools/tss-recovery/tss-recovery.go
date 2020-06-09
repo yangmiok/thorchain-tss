@@ -64,7 +64,10 @@ func main() {
 		}
 
 		jsonString, _ := json.Marshal(keyfile)
-		ioutil.WriteFile(*export, jsonString, os.ModePerm)
+		err = ioutil.WriteFile(*export, jsonString, os.ModePerm)
+		if err != nil {
+			fmt.Printf("--->%v", err)
+		}
 		fmt.Printf("---wrote to: %+v\n", *export)
 	}
 }

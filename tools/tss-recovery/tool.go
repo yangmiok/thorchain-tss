@@ -26,21 +26,6 @@ type (
 	}
 )
 
-var (
-	zero = big.NewInt(0)
-	one  = big.NewInt(1)
-)
-
-type (
-	Share struct {
-		Threshold int
-		ID,       // xi
-		Share *big.Int // Sigma i
-	}
-
-	Shares []*Share
-)
-
 func getTssSecretFile(file string) (KeygenLocalState, error) {
 	_, err := os.Stat(file)
 	if err != nil {
