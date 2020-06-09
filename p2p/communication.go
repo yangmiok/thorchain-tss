@@ -257,6 +257,7 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	c.logger.Info().Msg("Successfully announced!")
 	return nil
 }
+
 func (c *Communication) discoverPeers() error {
 	routingDiscovery := discovery.NewRoutingDiscovery(c.dhtInstance)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -274,12 +275,13 @@ func (c *Communication) discoverPeers() error {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 			defer cancel()
 			if err := c.host.Connect(ctx, ai); err != nil {
-				c.logger.Err(err).Msgf("fail to connect to peer(%s): %w", ai.ID, err)
+				c.logger.Err(err).Msgf("fail to connect to peer(%s)", ai.ID)
 			}
 		}
 	}()
 	return nil
 }
+
 func (c *Communication) connectToOnePeer(pID peer.ID) (network.Stream, error) {
 	c.logger.Debug().Msgf("peer:%s,current:%s", pID, c.host.ID())
 	// dont connect to itself
