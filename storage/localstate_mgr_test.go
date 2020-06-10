@@ -8,6 +8,8 @@ import (
 
 	"github.com/binance-chain/tss-lib/ecdsa/keygen"
 	. "gopkg.in/check.v1"
+
+	"gitlab.com/thorchain/tss/go-tss/conversion"
 )
 
 type FileStateMgrTestSuite struct{}
@@ -15,6 +17,10 @@ type FileStateMgrTestSuite struct{}
 var _ = Suite(&FileStateMgrTestSuite{})
 
 func TestPackage(t *testing.T) { TestingT(t) }
+
+func (s *FileStateMgrTestSuite) SetUpTest(c *C) {
+	conversion.SetupBech32Prefix()
+}
 
 func (s *FileStateMgrTestSuite) TestNewFileStateMgr(c *C) {
 	folder := os.TempDir()
@@ -28,8 +34,11 @@ func (s *FileStateMgrTestSuite) TestNewFileStateMgr(c *C) {
 	c.Assert(fsm, NotNil)
 	_, err = os.Stat(f)
 	c.Assert(err, IsNil)
-	fileName := fsm.getFilePathName("whatever")
-	c.Assert(fileName, Equals, filepath.Join(f, "localstate-whatever.json"))
+	fileName, err := fsm.getFilePathName("whatever")
+	c.Assert(err, NotNil)
+	fileName, err = fsm.getFilePathName("thorpub1addwnpepqf90u7n3nr2jwsw4t2gzhzqfdlply8dlzv3mdj4dr22uvhe04azq5gac3gq")
+	c.Assert(err, IsNil)
+	c.Assert(fileName, Equals, filepath.Join(f, "localstate-thorpub1addwnpepqf90u7n3nr2jwsw4t2gzhzqfdlply8dlzv3mdj4dr22uvhe04azq5gac3gq.json"))
 }
 
 func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
@@ -50,6 +59,8 @@ func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
 	fsm, err := NewFileStateMgr(f)
 	c.Assert(err, IsNil)
 	c.Assert(fsm, NotNil)
+	c.Assert(fsm.SaveLocalState(stateItem), NotNil)
+	stateItem.PubKey = "thorpub1addwnpepqf90u7n3nr2jwsw4t2gzhzqfdlply8dlzv3mdj4dr22uvhe04azq5gac3gq"
 	c.Assert(fsm.SaveLocalState(stateItem), IsNil)
 	filePathName := filepath.Join(f, "localstate-"+stateItem.PubKey+".json")
 	_, err = os.Stat(filePathName)
