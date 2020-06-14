@@ -38,6 +38,10 @@ func (msgType THORChainTSSMessageType) String() string {
 		return "TSSKeyGenVerMsg"
 	case TSSKeySignVerMsg:
 		return "TSSKeySignVerMsg"
+	case TSSControlMsg:
+		return "TssControlMsg"
+	case TSSTaskDone:
+		return "TssTaskDone"
 	default:
 		return "Unknown"
 	}
