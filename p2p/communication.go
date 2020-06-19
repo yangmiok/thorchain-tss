@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p-core/routing"
+
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -217,6 +219,18 @@ func (c *Communication) bootStrapConnectivityCheck() error {
 	return errors.New("the node cannot connect to any bootstrap node")
 }
 
+func tssRouting(h host.Host) (routing.PeerRouting, error) {
+	ctx := context.Background()
+	kademliaDHT, err := dht.New(ctx, h)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create DHT: %w", err)
+	}
+	nc := NewCachedP2PAddr()
+	nc.UpdateDHT(kademliaDHT)
+	fmt.Println("4444444444444444444444444444")
+	return nc, nil
+}
+
 func (c *Communication) startChannel(privKeyBytes []byte) error {
 	ctx := context.Background()
 	p2pPriKey, err := crypto.UnmarshalSecp256k1PrivateKey(privKeyBytes)
@@ -236,6 +250,7 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 		libp2p.ListenAddrs([]maddr.Multiaddr{c.listenAddr}...),
 		libp2p.Identity(p2pPriKey),
 		libp2p.AddrsFactory(addressFactory),
+		libp2p.Routing(tssRouting),
 	)
 	if err != nil {
 		return fmt.Errorf("fail to create p2p host: %w", err)
