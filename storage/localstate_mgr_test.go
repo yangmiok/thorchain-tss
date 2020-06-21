@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 
+	"gitlab.com/thorchain/tss/go-tss/conversion"
+
 	"github.com/binance-chain/tss-lib/ecdsa/keygen"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
@@ -27,7 +29,7 @@ func (s *FileStateMgrTestSuite) TestNewFileStateMgr(c *C) {
 		err := os.RemoveAll(f)
 		c.Assert(err, IsNil)
 	}()
-	fsm, err := NewFileStateMgr(f)
+	fsm, err := NewFileStateMgr(f, nil)
 	c.Assert(err, IsNil)
 	c.Assert(fsm, NotNil)
 	_, err = os.Stat(f)
@@ -51,7 +53,7 @@ func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
 		err := os.RemoveAll(f)
 		c.Assert(err, IsNil)
 	}()
-	fsm, err := NewFileStateMgr(f)
+	fsm, err := NewFileStateMgr(f, nil)
 	c.Assert(err, IsNil)
 	c.Assert(fsm, NotNil)
 	c.Assert(fsm.SaveLocalState(stateItem), IsNil)
@@ -61,6 +63,46 @@ func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
 	item, err := fsm.GetLocalState(stateItem.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(reflect.DeepEqual(stateItem, item), Equals, true)
+}
+
+func (s *FileStateMgrTestSuite) TestSaveLoadEncryptedState(c *C) {
+	stateItem := KeygenLocalState{
+		PubKey:    "wasdfasdfasdfasdfasdfasdf",
+		LocalData: keygen.NewLocalPartySaveData(5),
+		ParticipantKeys: []string{
+			"A", "B", "C",
+		},
+		LocalPartyKey: "A",
+	}
+	folder := os.TempDir()
+	f := filepath.Join(folder, "test", "test1", "test2")
+	defer func() {
+		err := os.RemoveAll(f)
+		c.Assert(err, IsNil)
+	}()
+
+	testKey := "MzI5Zjc5YzI1MjAzMzIwNjAyOWI2OTI4ZWMwMmNmNzZlYmFkNTM3OWVmODlhYTVhMGY2ZTRiYjU2MGE3ZDgzZA=="
+	testPriKey, err := conversion.GetPriKey(testKey)
+	c.Assert(err, IsNil)
+
+	fsm, err := NewFileStateMgr(f, testPriKey)
+	c.Assert(err, IsNil)
+	c.Assert(fsm, NotNil)
+	c.Assert(fsm.SaveLocalState(stateItem), IsNil)
+	filePathName := filepath.Join(f, "localstate-"+stateItem.PubKey+".json")
+	_, err = os.Stat(filePathName)
+	c.Assert(err, IsNil)
+	item, err := fsm.GetLocalState(stateItem.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(reflect.DeepEqual(stateItem, item), Equals, true)
+
+	// we test with a different key to decrypt the file
+	wrongKey := "ZThiMDAxOTk2MDc4ODk3YWE0YThlMjdkMWY0NjA1MTAwZDgyNDkyYzdhNmMwZWQ3MDBhMWIyMjNmNGMzYjVhYg=="
+	wrongPriKey, err := conversion.GetPriKey(wrongKey)
+	c.Assert(err, IsNil)
+	fsm.encKey = wrongPriKey
+	_, err = fsm.GetLocalState(stateItem.PubKey)
+	c.Assert(err, NotNil)
 }
 
 func (s *FileStateMgrTestSuite) TestSaveAddressBook(c *C) {
@@ -81,7 +123,7 @@ func (s *FileStateMgrTestSuite) TestSaveAddressBook(c *C) {
 		err := os.RemoveAll(f)
 		c.Assert(err, IsNil)
 	}()
-	fsm, err := NewFileStateMgr(f)
+	fsm, err := NewFileStateMgr(f, nil)
 	c.Assert(err, IsNil)
 	c.Assert(fsm, NotNil)
 	c.Assert(fsm.SaveAddressBook(testAddresses), IsNil)
