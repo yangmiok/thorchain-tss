@@ -139,6 +139,10 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	if err := t.signatureNotifier.BroadcastSignature(msgID, signatureData, signers); err != nil {
 		return emptyResp, fmt.Errorf("fail to broadcast signature:%w", err)
 	}
+
+	t.logger.Info().Msgf("-------keysign---------")
+	t.p2pCommunication.CleanAllStreams(onlinePeers)
+
 	return keysign.NewResponse(
 		base64.StdEncoding.EncodeToString(signatureData.R),
 		base64.StdEncoding.EncodeToString(signatureData.S),
