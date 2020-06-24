@@ -94,6 +94,27 @@ func (c *Communication) GetLocalPeerID() string {
 	return c.host.ID().String()
 }
 
+func (c *Communication) CleanAllStreams(peers []peer.ID) error {
+	for _, el := range peers {
+		ctx, cancel := context.WithTimeout(context.Background(), TimeoutConnecting)
+		defer cancel()
+		s, err := c.host.NewStream(ctx, el, joinPartyProtocol)
+		if err != nil {
+			c.logger.Error().Err(err).Msgf("EEEEEEEEEEE")
+			continue
+		}
+		s.Conn().Close()
+		s, err = c.host.NewStream(ctx, el, TSSProtocolID)
+		if err != nil {
+			c.logger.Error().Err(err).Msgf("WWWWWW")
+			continue
+		}
+		s.Conn().Close()
+	}
+
+	return nil
+}
+
 // Broadcast message to Peers
 func (c *Communication) Broadcast(peers []peer.ID, msg []byte) {
 	if len(peers) == 0 {

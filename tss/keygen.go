@@ -86,6 +86,11 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 	}
 
 	blameNodes := *blameMgr.GetBlame()
+
+	// clean up the p2p stream
+	t.logger.Info().Msgf("--------------------clean up---------------")
+	t.p2pCommunication.CleanAllStreams(onlinePeers)
+
 	return keygen.NewResponse(
 		newPubKey,
 		addr.String(),
