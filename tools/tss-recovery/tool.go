@@ -11,6 +11,10 @@ import (
 	"math/big"
 	"os"
 
+	"gitlab.com/thorchain/tss/go-tss/conversion"
+
+	tcrypto "github.com/tendermint/tendermint/crypto"
+
 	"github.com/binance-chain/tss-lib/ecdsa/keygen"
 	"github.com/btcsuite/btcd/btcec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -26,7 +30,7 @@ type (
 	}
 )
 
-func getTssSecretFile(file string) (KeygenLocalState, error) {
+func getTssSecretFile(file string, privKey tcrypto.PrivKey) (KeygenLocalState, error) {
 	_, err := os.Stat(file)
 	if err != nil {
 		return KeygenLocalState{}, err
@@ -35,6 +39,17 @@ func getTssSecretFile(file string) (KeygenLocalState, error) {
 	if err != nil {
 		return KeygenLocalState{}, fmt.Errorf("file to read from file(%s): %w", file, err)
 	}
+	if privKey != nil {
+		aesKey, err := conversion.GetAesKey(privKey)
+		if err != nil {
+			return KeygenLocalState{}, err
+		}
+		buf, err = conversion.AesDecryption(aesKey, buf)
+		if err != nil {
+			return KeygenLocalState{}, err
+		}
+	}
+
 	var localState KeygenLocalState
 	if err := json.Unmarshal(buf, &localState); nil != err {
 		return KeygenLocalState{}, fmt.Errorf("fail to unmarshal KeygenLocalState: %w", err)

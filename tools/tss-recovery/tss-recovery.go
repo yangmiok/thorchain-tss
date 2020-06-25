@@ -6,26 +6,48 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
+
+	"gitlab.com/thorchain/tss/go-tss/conversion"
+
+	tcrypto "github.com/tendermint/tendermint/crypto"
 
 	"github.com/binance-chain/tss-lib/crypto/vss"
 	. "github.com/decred/dcrd/dcrec/secp256k1"
 )
 
 func main() {
-
 	n := *(flag.Int("n", 3, "signing party size"))
 	threshold := n - 1
 	export := flag.String("export", "", "path to export keyfile")
+	encryptionKeys := flag.String("encryption-keys", "", "the ordered encryption keys of the share")
 	password := flag.String("password", "", "encryption password for keyfile")
 	flag.Parse()
 	files := flag.Args()
 
 	setupBech32Prefix()
+	nodePrivkey := make([]tcrypto.PrivKey, len(files))
+	if *encryptionKeys != "" {
+		keys := strings.Split(*encryptionKeys, ",")
+		for i, el := range keys {
+			if el == "" {
+				continue
+			}
+			testPriKey, err := conversion.GetPriKey(el)
+			if err != nil {
+				fmt.Println("error in parsing the node private key")
+				return
+			}
+			nodePrivkey[i] = testPriKey
+		}
+	}
+
 	allSecret := make([]KeygenLocalState, len(files))
 	for i, f := range files {
-		tssSecret, err := getTssSecretFile(f)
+		tssSecret, err := getTssSecretFile(f, nodePrivkey[i])
 		if err != nil {
-			fmt.Printf("---%v\n", err)
+			fmt.Printf("fail to parse the key share file:%s\n", err)
+			return
 		}
 		allSecret[i] = tssSecret
 	}
