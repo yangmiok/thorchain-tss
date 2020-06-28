@@ -101,7 +101,7 @@ func NewTss(
 	if err := comm.Start(priKeyRawBytes); nil != err {
 		return nil, fmt.Errorf("fail to start p2p network: %w", err)
 	}
-	pc := p2p.NewPartyCoordinator(comm.GetHost(), 10*time.Second)
+	pc := p2p.NewPartyCoordinator(comm.GetHost(), conf.PartyTimeout)
 	sn := keysign.NewSignatureNotifier(comm.GetHost())
 	tssServer := TssServer{
 		conf:   conf,
