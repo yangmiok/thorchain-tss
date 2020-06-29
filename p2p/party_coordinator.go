@@ -161,7 +161,7 @@ func (pc *PartyCoordinator) sendRequestToPeer(msg *messages.JoinPartyRequest, re
 		pc.logger.Error().Err(ctx.Err()).Msg("fail to open stream with context timeout")
 		// we reset the whole connection of this peer
 		err := pc.host.Network().ClosePeer(remotePeer)
-		pc.logger.Error().Err(err).Msgf("fail to clolse the connection to peer %s", remotePeer.String())
+		pc.logger.Error().Err(err).Msgf("fail to close the connection to peer %s", remotePeer.String())
 		return ctx.Err()
 	}
 

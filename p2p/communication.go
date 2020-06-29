@@ -291,6 +291,8 @@ func (c *Communication) connectToOnePeer(pID peer.ID) (network.Stream, error) {
 	c.logger.Debug().Msgf("connect to peer : %s", pID.String())
 	ctx, cancel := context.WithTimeout(context.Background(), TimeoutConnecting)
 	defer cancel()
+	c.logger.Info().Msg(">>>>>TRIM connection")
+	c.host.ConnManager().TrimOpenConns(ctx)
 	stream, err := c.host.NewStream(ctx, pID, TSSProtocolID)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create new stream to peer: %s, %w", pID, err)
